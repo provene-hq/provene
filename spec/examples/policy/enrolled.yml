@@ -1,0 +1,23 @@
+# RFC 0002 section 13.3 — the only mode that closes concealment.
+# An enrolled developer who disables their hook is blocked;
+# a first-time contributor is never punished for not having installed anything.
+version: 1
+mode: enrolled
+
+enrollment:
+  source: file
+  path: .provene/enrolled.yml
+
+defaults:
+  minTier: T2
+  attributionGranularity: hunk
+
+rules:
+  - id: enrolled-authors-must-emit
+    paths: ["**"]
+    require:
+      receipt: { minTier: T2 }
+      tests: { result: PASSED, observedBy: ci, baseIsMergeBase: true }
+    action: block
+    message: "Commits from enrolled developers must carry receipts."
+    remedy: "Run `provene doctor` to check your hook, then amend and push."

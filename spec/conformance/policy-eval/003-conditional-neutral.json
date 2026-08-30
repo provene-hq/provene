@@ -1,0 +1,77 @@
+{
+  "id": "003-conditional-neutral",
+  "rfc": "0002",
+  "section": "4.1",
+  "description": "conditional mode with zero receipts yields NEUTRAL, never pass. Reporting green would assert a policy passed when none ran.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "conditional",
+      "defaults": {
+        "minTier": "T2",
+        "attributionGranularity": "file"
+      },
+      "exemptions": [],
+      "rules": [
+        {
+          "id": "docs-are-relaxed",
+          "paths": [
+            "docs/**",
+            "**/*.md"
+          ],
+          "action": "allow"
+        },
+        {
+          "id": "crypto-needs-human",
+          "paths": [
+            "src/crypto/**"
+          ],
+          "when": {
+            "agentAttributed": true
+          },
+          "require": {
+            "humanApproval": true,
+            "receipt": {
+              "minTier": "T2"
+            }
+          },
+          "action": "block",
+          "message": "Agent-authored changes under src/crypto/ require a human approver.",
+          "remedy": "Request review from @acme/security, then re-run this check."
+        },
+        {
+          "id": "everything-else",
+          "paths": [
+            "**"
+          ],
+          "require": {
+            "receipt": {
+              "minTier": "T2"
+            },
+            "tests": {
+              "result": "PASSED",
+              "observedBy": "ci",
+              "baseIsMergeBase": true
+            }
+          },
+          "action": "block",
+          "message": "Changes must carry CI-observed test evidence.",
+          "remedy": "Add tests covering the changed files."
+        }
+      ]
+    },
+    "changedPaths": [
+      "src/auth/session.ts"
+    ],
+    "receipts": [],
+    "pullRequest": {
+      "humanApproved": false,
+      "mergeBase": "aaaa"
+    }
+  },
+  "expect": {
+    "outcome": "neutral",
+    "findings": []
+  },
+  "note": "An implementation that reports 'pass' here is making the exact class of false claim the product exists to prevent."
+}

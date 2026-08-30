@@ -1,0 +1,20 @@
+# RFC 0002 section 13.1 — a team just starting.
+# conditional mode: zero false positives, and no defense against concealment.
+version: 1
+mode: conditional
+
+defaults:
+  minTier: T2
+  attributionGranularity: file
+
+rules:
+  - id: agent-changes-need-ci-tests
+    paths: ["**"]
+    when:
+      agentAttributed: true
+    require:
+      receipt: { minTier: T2 }
+      tests: { result: PASSED, observedBy: ci, baseIsMergeBase: true }
+    action: block
+    message: "Agent-authored changes must carry CI-observed test evidence."
+    remedy: "Push a commit so CI runs the suite, or add tests covering the changed files."

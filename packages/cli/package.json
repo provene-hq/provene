@@ -1,0 +1,17 @@
+{
+  "name": "provene",
+  "version": "0.0.0-dev",
+  "description": "Portable, signed evidence receipts for AI-generated code changes",
+  "license": "Apache-2.0",
+  "type": "module",
+  "bin": { "provene": "./dist/cli.js" },
+  "engines": { "node": ">=22.6" },
+  "files": ["dist"],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "test": "node --test test/*.test.ts",
+    "conformance": "node --test test/conformance.test.ts"
+  },
+  "devDependencies": { "typescript": "^5.6.0" }
+}

@@ -1,0 +1,113 @@
+{
+  "id": "glob-subset",
+  "rfc": "0002",
+  "section": "5.5",
+  "description": "The normative glob subset. Patterns are anchored at the repository root, unlike .gitignore, where a pattern containing no separator matches at any depth. Use **/ for any depth.",
+  "cases": [
+    {
+      "pattern": "**",
+      "path": "a.ts",
+      "match": true
+    },
+    {
+      "pattern": "**",
+      "path": "src/deep/a.ts",
+      "match": true
+    },
+    {
+      "pattern": "*.md",
+      "path": "README.md",
+      "match": true
+    },
+    {
+      "pattern": "*.md",
+      "path": "docs/guide.md",
+      "match": false
+    },
+    {
+      "pattern": "**/*.md",
+      "path": "README.md",
+      "match": true
+    },
+    {
+      "pattern": "**/*.md",
+      "path": "docs/guide.md",
+      "match": true
+    },
+    {
+      "pattern": "**/*.md",
+      "path": "docs/a/b/guide.md",
+      "match": true
+    },
+    {
+      "pattern": "src/**",
+      "path": "src/a.ts",
+      "match": true
+    },
+    {
+      "pattern": "src/**",
+      "path": "src/a/b/c.ts",
+      "match": true
+    },
+    {
+      "pattern": "src/**",
+      "path": "src",
+      "match": false
+    },
+    {
+      "pattern": "src/**",
+      "path": "srcx/a.ts",
+      "match": false
+    },
+    {
+      "pattern": "src/*.ts",
+      "path": "src/a.ts",
+      "match": true
+    },
+    {
+      "pattern": "src/*.ts",
+      "path": "src/a/b.ts",
+      "match": false
+    },
+    {
+      "pattern": "src/crypto/**",
+      "path": "src/crypto/aes.ts",
+      "match": true
+    },
+    {
+      "pattern": "src/crypto/**",
+      "path": "src/cryptox/aes.ts",
+      "match": false
+    },
+    {
+      "pattern": "src/?.ts",
+      "path": "src/a.ts",
+      "match": true
+    },
+    {
+      "pattern": "src/?.ts",
+      "path": "src/ab.ts",
+      "match": false
+    },
+    {
+      "pattern": "src/[abc].ts",
+      "path": "src/b.ts",
+      "match": true
+    },
+    {
+      "pattern": "src/[abc].ts",
+      "path": "src/d.ts",
+      "match": false
+    },
+    {
+      "pattern": "a/**/b.ts",
+      "path": "a/b.ts",
+      "match": true
+    },
+    {
+      "pattern": "a/**/b.ts",
+      "path": "a/x/y/b.ts",
+      "match": true
+    }
+  ]
+}

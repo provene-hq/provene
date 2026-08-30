@@ -1,0 +1,43 @@
+{
+  "id": "clean",
+  "rfc": "0002",
+  "section": "12",
+  "description": "A well-formed policy produces no findings.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "conditional",
+      "rules": [
+        {
+          "id": "docs",
+          "paths": [
+            "docs/**",
+            "**/*.md"
+          ],
+          "action": "allow"
+        },
+        {
+          "id": "rest",
+          "paths": [
+            "**"
+          ],
+          "require": {
+            "receipt": {
+              "minTier": "T2"
+            },
+            "tests": {
+              "result": "PASSED",
+              "observedBy": "ci"
+            }
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        }
+      ]
+    }
+  },
+  "expect": {
+    "codes": []
+  }
+}

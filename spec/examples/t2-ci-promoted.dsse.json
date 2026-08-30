@@ -1,0 +1,190 @@
+{
+  "payloadType": "application/vnd.in-toto+json",
+  "payload": "<base64(canonical JSON of the statement below)>",
+  "signatures": [
+    {
+      "keyid": "",
+      "sig": "MEUCIQD\u2026"
+    }
+  ],
+  "_statement_for_readability_only": {
+    "_type": "https://in-toto.io/Statement/v1",
+    "subject": [
+      {
+        "name": "acme/api@feat/session-expiry",
+        "digest": {
+          "sha256": "b71f4c9a2e5d80f316ac47bb90e2d5c8813fa06e4d97cc21b5e0f7a3d9481c62"
+        }
+      }
+    ],
+    "predicateType": "https://provene.dev/attestation/code-change/v0.1",
+    "predicate": {
+      "provene": "0.1",
+      "attestation": {
+        "tier": "T2",
+        "attester": {
+          "identity": "repo:acme/api:ref:refs/heads/main",
+          "issuer": "https://token.actions.githubusercontent.com"
+        },
+        "trustRoot": {
+          "kind": "sigstore-private",
+          "url": "https://fulcio.acme-internal.example"
+        },
+        "transparencyLog": {
+          "published": false
+        },
+        "promotedFrom": {
+          "tier": "T0",
+          "receiptDigest": "sha256:66b0319951400ec5b5318a3652f245f6d65fe1fa09b0c53558f685269131ba45"
+        }
+      },
+      "agent": {
+        "vendor": "anthropic",
+        "tool": "claude-code",
+        "toolVersion": "2.4.1",
+        "model": "claude-opus-5",
+        "modelSource": "reported"
+      },
+      "task": {
+        "ref": "https://github.com/acme/api/issues/412",
+        "sessionRef": "claude-code://session/01J8YQ2K7WZC4M",
+        "digest": "hmac-sha256:4a91e0c7b3d2f81a6094cc5e7fb3120d84a7e69f5c0db3128e4a7f61d0c9b352",
+        "digestScope": "repo",
+        "keySource": "root-commit"
+      },
+      "session": {
+        "id": "01J8YQ2K7WZC4M",
+        "startedAt": "2026-08-30T18:02:11Z",
+        "endedAt": "2026-08-30T18:41:56Z",
+        "toolCalls": 61
+      },
+      "binding": {
+        "changeDigest": "b71f4c9a2e5d80f316ac47bb90e2d5c8813fa06e4d97cc21b5e0f7a3d9481c62",
+        "algorithm": "provene-changeset-v1",
+        "parent": "9c2d1a77f0b6e4358d1f2a9c7e0b4d63a815ff20",
+        "excluded": [
+          ".provene/**"
+        ]
+      },
+      "changes": {
+        "granularity": "hunk",
+        "files": [
+          {
+            "path": "src/auth/session.ts",
+            "status": "M",
+            "preBlob": "3f1c8ab29d0e6417c5aa0b83e7d21f9046cc7e15",
+            "postBlob": "a07e5b13cc82094fe6a1d7350bb429ea81f0c6d7",
+            "attributed": [
+              {
+                "digest": "sha256:75401d8d8e0fbafab5e1a69d9addb301d5990f407efda4f56f583063f8716e72",
+                "lines": 18,
+                "anchorBefore": "sha256:9ec6d9d27423980bd95951744db677e0232cdd2e4540d91299e1dda2b497ab64",
+                "anchorAfter": "sha256:f415acd3a33ee590e445217f1515624d9808d92dde8ebc1d674c501fdaa6315a"
+              },
+              {
+                "digest": "sha256:9cf0f75926d3870fd222eb4085ebbe1fcf9747285eb354eba708de2dbc1f7301",
+                "lines": 6,
+                "anchorBefore": "sha256:53a261d25afe69a105184079853bb83c06e2ee07608871a9530d4631a209bbd6",
+                "anchorAfter": "sha256:2abf93c20459b0ee9e8075504c3b0d64d625a476805c13c8ac7c212965b0926c"
+              }
+            ],
+            "verifiedBy": [
+              "run-1"
+            ]
+          },
+          {
+            "path": "src/auth/session.test.ts",
+            "status": "A",
+            "preBlob": "-",
+            "postBlob": "17dd0a6b4e2c9f81530ba7e6c4d02198fa3b7e50",
+            "attributed": [
+              {
+                "digest": "sha256:e394226f5bc488a5c390ec87aebe027262e0b2aa0d286eab936dc90e7de3b229",
+                "lines": 18,
+                "anchorBefore": "sha256:731d15703c0bb8de6da4a0595f687a580d1a75433f0f842b48ef4fa620f292d8",
+                "anchorAfter": "sha256:b809cae461cbbdec2f7ebfa1c98bda5001da321f816b369eea80acf3861420de"
+              }
+            ],
+            "verifiedBy": [
+              "run-1"
+            ]
+          },
+          {
+            "path": "docs/auth.md",
+            "status": "M",
+            "preBlob": "5b0e21c8a49df736012ce8b5a70f4d9e63a1cc84",
+            "postBlob": "c93a7f0d51be6284ab07c1e5f83d260a94b7e112",
+            "attributed": [
+              {
+                "digest": "sha256:aeb6a4d9758b956ac90b0fc5bd523b8990bf2729d5c1f4661e535b1bcf15a6fb",
+                "lines": 18,
+                "anchorBefore": "sha256:2424ac5e2bf4f90e349e3f3c25f03a7ec2ca6496fb0f8228292e17fe57216ed7",
+                "anchorAfter": "sha256:57e0c200f8555bc35787cd6d6b684fe0bbb37cc5ba01bfd5cda441b92c86449c"
+              }
+            ],
+            "verifiedBy": []
+          }
+        ]
+      },
+      "commands": [
+        {
+          "argv0": "npm",
+          "shape": "npm test",
+          "argvDigest": "hmac-sha256:1d7743ba0e91c6528fd40a7b3ce619d82f05ba47cc31e08d6b92f7a04e15c3d0",
+          "exitCode": 0,
+          "durationMs": 12040,
+          "observedBy": "ci"
+        },
+        {
+          "argv0": "gh",
+          "argvDigest": "hmac-sha256:88f0a2c41b7e59d306ca8f27e0b1d4539a67cc02fe184b3d7a5091c6ef23b7a4",
+          "exitCode": 0,
+          "durationMs": 890,
+          "observedBy": "ci"
+        }
+      ],
+      "verification": {
+        "runs": [
+          {
+            "id": "run-1",
+            "kind": "test",
+            "tool": "vitest",
+            "result": "PASSED",
+            "counts": {
+              "passed": 47,
+              "failed": 0,
+              "skipped": 2
+            },
+            "failedTests": [],
+            "url": "https://github.com/acme/api/actions/runs/19341882/job/55201933",
+            "observedBy": "ci",
+            "baseCommit": "9c2d1a77f0b6e4358d1f2a9c7e0b4d63a815ff20"
+          },
+          {
+            "id": "run-2",
+            "kind": "typecheck",
+            "tool": "tsc",
+            "result": "PASSED",
+            "counts": {
+              "passed": 1,
+              "failed": 0
+            },
+            "url": "https://github.com/acme/api/actions/runs/19341882/job/55201934",
+            "observedBy": "ci",
+            "baseCommit": "9c2d1a77f0b6e4358d1f2a9c7e0b4d63a815ff20"
+          }
+        ],
+        "unverifiedPaths": [
+          "docs/auth.md"
+        ]
+      },
+      "redaction": {
+        "pathsExcluded": false,
+        "allowlistId": "provene-default-v1"
+      },
+      "humanReview": {
+        "observed": false
+      }
+    }
+  }
+}

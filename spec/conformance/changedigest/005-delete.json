@@ -1,0 +1,24 @@
+{
+  "id": "005-delete",
+  "rfc": "0001",
+  "section": "4.1",
+  "description": "Deletions carry '-' as the post blob.",
+  "input": {
+    "entries": [
+      {
+        "status": "D",
+        "path": "src/legacy/old.ts",
+        "preBlob": "0000000000000000000000000000000000009911",
+        "postBlob": "-"
+      }
+    ],
+    "excludedPrefixes": [
+      ".provene/"
+    ]
+  },
+  "expect": {
+    "canonicalPayload": "D src/legacy/old.ts 0000000000000000000000000000000000009911 -",
+    "canonicalPayloadUtf8Length": 62,
+    "changeDigest": "7ff838930421b11efebc6c6aebe8598c12df4ee9aad6ce35fb4843672767cc97"
+  }
+}

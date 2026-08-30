@@ -1,0 +1,34 @@
+{
+  "id": "L6-tests-without-ci",
+  "rfc": "0002",
+  "section": "12",
+  "description": "Requiring a test result without requiring CI observation.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "conditional",
+      "rules": [
+        {
+          "id": "r",
+          "paths": [
+            "**"
+          ],
+          "require": {
+            "tests": {
+              "result": "PASSED"
+            }
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        }
+      ]
+    }
+  },
+  "expect": {
+    "codes": [
+      "L6"
+    ]
+  },
+  "note": "An error, not a warning: this is the most likely way to write a policy that looks like it enforces test evidence and instead asks the party who wants the merge."
+}

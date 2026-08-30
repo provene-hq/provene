@@ -1,0 +1,25 @@
+{
+  "id": "005-duplicate-span",
+  "rfc": "0001",
+  "section": "6.3",
+  "description": "The same span text appears twice; anchors select the attributed occurrence.",
+  "input": {
+    "attributed": {
+      "digest": "sha256:b94b5d597daf3fb421146ff60daec509e60e50d92c75eb9d7956df66f959cd01",
+      "lines": 1,
+      "anchorBefore": "sha256:5d656741f4b52ed32127d768480a1f7e8102d330d86734f5f6b84961fef08ded",
+      "anchorAfter": "sha256:d10b36aa74a59bcf4a88185837f658afaf3646eff2bb16c3928d0e9335e945d2"
+    },
+    "fileLines": [
+      "function a() {",
+      "  return check(t);",
+      "}",
+      "function b() {",
+      "  return check(t);",
+      "}"
+    ]
+  },
+  "expect": {
+    "located": true
+  }
+}

@@ -1,0 +1,102 @@
+{
+  "id": "008-when-not-met",
+  "rfc": "0002",
+  "section": "7.1",
+  "description": "A rule whose `when` is unmet still GOVERNS the path — it does not fall through to a later rule. The path is simply unconstrained by it.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "required-with-exemptions",
+      "defaults": {
+        "minTier": "T2",
+        "attributionGranularity": "file"
+      },
+      "exemptions": [
+        {
+          "id": "dependabot",
+          "reason": "Automated dependency bumps carry no agent session.",
+          "author": "dependabot[bot]"
+        }
+      ],
+      "rules": [
+        {
+          "id": "docs-are-relaxed",
+          "paths": [
+            "docs/**",
+            "**/*.md"
+          ],
+          "action": "allow"
+        },
+        {
+          "id": "crypto-needs-human",
+          "paths": [
+            "src/crypto/**"
+          ],
+          "when": {
+            "agentAttributed": true
+          },
+          "require": {
+            "humanApproval": true,
+            "receipt": {
+              "minTier": "T2"
+            }
+          },
+          "action": "block",
+          "message": "Agent-authored changes under src/crypto/ require a human approver.",
+          "remedy": "Request review from @acme/security, then re-run this check."
+        },
+        {
+          "id": "everything-else",
+          "paths": [
+            "**"
+          ],
+          "require": {
+            "receipt": {
+              "minTier": "T2"
+            },
+            "tests": {
+              "result": "PASSED",
+              "observedBy": "ci",
+              "baseIsMergeBase": true
+            }
+          },
+          "action": "block",
+          "message": "Changes must carry CI-observed test evidence.",
+          "remedy": "Add tests covering the changed files."
+        }
+      ]
+    },
+    "changedPaths": [
+      "src/crypto/aes.ts"
+    ],
+    "receipts": [
+      {
+        "tier": "T2",
+        "paths": [
+          "src/crypto/aes.ts"
+        ],
+        "agentAttributed": [],
+        "runs": [
+          {
+            "kind": "test",
+            "result": "PASSED",
+            "observedBy": "ci",
+            "baseCommit": "aaaa",
+            "covers": [
+              "src/crypto/aes.ts"
+            ]
+          }
+        ]
+      }
+    ],
+    "pullRequest": {
+      "humanApproved": false,
+      "mergeBase": "aaaa"
+    }
+  },
+  "expect": {
+    "outcome": "pass",
+    "findings": []
+  },
+  "note": "This is a deliberate semantic choice and the most likely place for two implementations to diverge: governance is decided by `paths` alone, applicability by `when`."
+}

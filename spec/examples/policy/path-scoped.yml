@@ -1,0 +1,47 @@
+# RFC 0002 section 13.2 — the shape most teams converge on.
+# Rule order matters: docs-are-relaxed MUST precede everything-else,
+# or the catch-all governs docs/ first. `provene policy check --explain`
+# prints the governing rule for every changed path.
+version: 1
+mode: required-with-exemptions
+
+defaults:
+  minTier: T2
+  attributionGranularity: hunk
+
+exemptions:
+  - id: dependabot
+    reason: "Automated dependency bumps carry no agent session."
+    author: "dependabot[bot]"
+  - id: web-ui
+    reason: "Commits authored in the GitHub web editor cannot run a local hook."
+    committer: "web-flow"
+  - id: reverts
+    reason: "Reverts reintroduce previously reviewed content."
+    messageMatches: "^Revert \""
+
+rules:
+  - id: docs-are-relaxed
+    paths: ["docs/**", "**/*.md"]
+    action: allow
+
+  - id: crypto-needs-human
+    paths: ["src/crypto/**", "src/auth/keys/**"]
+    when:
+      agentAttributed: true
+    require:
+      humanApproval: true
+      receipt: { minTier: T2, attributionGranularity: hunk }
+    action: block
+    message: "Agent-authored changes under src/crypto/ require a human approver."
+    remedy: "Request review from @acme/security, then re-run this check."
+
+  - id: everything-else
+    paths: ["**"]
+    require:
+      receipt: { minTier: T2 }
+      tests: { result: PASSED, observedBy: ci, baseIsMergeBase: true }
+      unverifiedPaths: { max: 2 }
+    action: block
+    message: "Changes must carry CI-observed test evidence."
+    remedy: "Add tests covering the changed files, or move them under an exempt path."

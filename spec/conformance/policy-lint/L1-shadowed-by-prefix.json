@@ -1,0 +1,44 @@
+{
+  "id": "L1-shadowed-by-prefix",
+  "rfc": "0002",
+  "section": "12",
+  "description": "A later rule under a directory already claimed by an earlier rule can never govern a path.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "conditional",
+      "rules": [
+        {
+          "id": "broad",
+          "paths": [
+            "src/**"
+          ],
+          "require": {
+            "receipt": true
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        },
+        {
+          "id": "narrow",
+          "paths": [
+            "src/crypto/**"
+          ],
+          "require": {
+            "receipt": true
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        }
+      ]
+    }
+  },
+  "expect": {
+    "codes": [
+      "L1"
+    ]
+  },
+  "note": "L1 is intentionally CONSERVATIVE: general glob subsumption is not worth deciding. It fires on identical patterns, on any rule after an unconditional **, and on a directory-prefix relationship. It will not catch every shadowing, and the spec says so."
+}

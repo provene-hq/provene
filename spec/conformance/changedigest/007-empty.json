@@ -1,0 +1,25 @@
+{
+  "id": "007-empty",
+  "rfc": "0001",
+  "section": "4.1",
+  "description": "A change set that is entirely excluded digests the empty string.",
+  "input": {
+    "entries": [
+      {
+        "status": "A",
+        "path": ".provene/aaaa.statement.json",
+        "preBlob": "-",
+        "postBlob": "0000000000000000000000000000000000000001"
+      }
+    ],
+    "excludedPrefixes": [
+      ".provene/"
+    ]
+  },
+  "expect": {
+    "canonicalPayload": "",
+    "canonicalPayloadUtf8Length": 0,
+    "changeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+  },
+  "note": "The empty payload is the SHA-256 of zero bytes. An implementation must not special-case this to an error: a commit that only adds receipts is legal."
+}

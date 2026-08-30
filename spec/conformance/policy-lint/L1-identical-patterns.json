@@ -1,0 +1,43 @@
+{
+  "id": "L1-identical-patterns",
+  "rfc": "0002",
+  "section": "12",
+  "description": "Two rules with identical pattern sets.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "conditional",
+      "rules": [
+        {
+          "id": "first",
+          "paths": [
+            "src/**"
+          ],
+          "require": {
+            "receipt": true
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        },
+        {
+          "id": "second",
+          "paths": [
+            "src/**"
+          ],
+          "require": {
+            "receipt": true
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        }
+      ]
+    }
+  },
+  "expect": {
+    "codes": [
+      "L1"
+    ]
+  }
+}

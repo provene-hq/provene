@@ -1,0 +1,32 @@
+{
+  "id": "L7-unanchored-pattern",
+  "rfc": "0002",
+  "section": "12",
+  "description": "A pattern with no separator and no ** matches only at the repository root.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "conditional",
+      "rules": [
+        {
+          "id": "r",
+          "paths": [
+            "*.md"
+          ],
+          "require": {
+            "receipt": true
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        }
+      ]
+    }
+  },
+  "expect": {
+    "codes": [
+      "L7"
+    ]
+  },
+  "note": "WARNING, not an error: a root-only *.md rule is legitimate. But .gitignore users expect any-depth matching, so the author probably meant **/*.md."
+}

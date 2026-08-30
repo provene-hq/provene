@@ -1,0 +1,45 @@
+{
+  "id": "L2-after-catchall",
+  "rfc": "0002",
+  "section": "12",
+  "description": "Any rule following an unconditional ** rule is unreachable.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "conditional",
+      "rules": [
+        {
+          "id": "catchall",
+          "paths": [
+            "**"
+          ],
+          "require": {
+            "receipt": true
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        },
+        {
+          "id": "later",
+          "paths": [
+            "docs/**"
+          ],
+          "require": {
+            "receipt": true
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        }
+      ]
+    }
+  },
+  "expect": {
+    "codes": [
+      "L1",
+      "L2"
+    ]
+  },
+  "note": "A ** predecessor triggers both the conservative L1 check and L2."
+}

@@ -1,0 +1,623 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://provene.dev/schema/receipt/v0.1.json",
+  "title": "Provene Code-Change Receipt Predicate v0.1",
+  "description": "Predicate body for predicateType https://provene.dev/attestation/code-change/v0.1. Unknown properties are permitted by design: verifiers must ignore fields they do not recognize (RFC 0001 section 12).",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "provene",
+    "attestation",
+    "agent",
+    "binding",
+    "changes"
+  ],
+  "properties": {
+    "provene": {
+      "const": "0.1",
+      "description": "Schema version."
+    },
+    "attestation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "tier",
+        "trustRoot",
+        "transparencyLog"
+      ],
+      "properties": {
+        "tier": {
+          "enum": [
+            "T0",
+            "T1",
+            "T2",
+            "T3"
+          ]
+        },
+        "attester": {
+          "type": "object",
+          "required": [
+            "identity"
+          ],
+          "properties": {
+            "identity": {
+              "type": "string",
+              "minLength": 1
+            },
+            "issuer": {
+              "type": "string",
+              "format": "uri"
+            }
+          }
+        },
+        "trustRoot": {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "sigstore-public",
+                "sigstore-private",
+                "ssh",
+                "x509",
+                "none"
+              ]
+            },
+            "url": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "allOf": [
+            {
+              "if": {
+                "properties": {
+                  "kind": {
+                    "enum": [
+                      "sigstore-private",
+                      "x509"
+                    ]
+                  }
+                },
+                "required": [
+                  "kind"
+                ]
+              },
+              "then": {
+                "required": [
+                  "url"
+                ]
+              }
+            }
+          ]
+        },
+        "transparencyLog": {
+          "type": "object",
+          "required": [
+            "published"
+          ],
+          "properties": {
+            "published": {
+              "type": "boolean"
+            },
+            "logIndex": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "logUrl": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "if": {
+            "properties": {
+              "published": {
+                "const": true
+              }
+            },
+            "required": [
+              "published"
+            ]
+          },
+          "then": {
+            "required": [
+              "logIndex"
+            ]
+          }
+        },
+        "promotedFrom": {
+          "type": "object",
+          "required": [
+            "tier",
+            "receiptDigest"
+          ],
+          "properties": {
+            "tier": {
+              "enum": [
+                "T0",
+                "T1",
+                "T2"
+              ]
+            },
+            "receiptDigest": {
+              "$ref": "#/$defs/sha256Ref"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "comment": "T0 is unsigned and therefore has no attester or trust root beyond 'none'.",
+          "if": {
+            "properties": {
+              "tier": {
+                "const": "T0"
+              }
+            },
+            "required": [
+              "tier"
+            ]
+          },
+          "then": {
+            "properties": {
+              "trustRoot": {
+                "properties": {
+                  "kind": {
+                    "const": "none"
+                  }
+                }
+              }
+            }
+          },
+          "else": {
+            "required": [
+              "attester"
+            ]
+          }
+        }
+      ]
+    },
+    "agent": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "tool",
+        "modelSource"
+      ],
+      "properties": {
+        "vendor": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string",
+          "minLength": 1
+        },
+        "toolVersion": {
+          "type": "string"
+        },
+        "model": {
+          "type": "string"
+        },
+        "modelSource": {
+          "enum": [
+            "reported",
+            "configured"
+          ],
+          "description": "How the model identifier was obtained. Inferred identifiers must not be recorded."
+        }
+      }
+    },
+    "task": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "ref": {
+          "type": "string",
+          "format": "uri",
+          "description": "URI into a system the developer does not control. The primary evidence field."
+        },
+        "sessionRef": {
+          "type": "string"
+        },
+        "digest": {
+          "$ref": "#/$defs/hmacRef",
+          "description": "Keyed HMAC over task text. Unkeyed digests are non-conformant."
+        },
+        "digestScope": {
+          "enum": [
+            "repo",
+            "org"
+          ]
+        },
+        "keySource": {
+          "enum": [
+            "root-commit",
+            "configured"
+          ],
+          "description": "root-commit = salt derived from the lexicographically smallest root commit; PUBLIC, gives cross-tenant unlinkability but no confidentiality against repo readers. configured = secret supplied out of band."
+        }
+      },
+      "dependentRequired": {
+        "digest": [
+          "digestScope",
+          "keySource"
+        ]
+      }
+    },
+    "session": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "id": {
+          "type": "string"
+        },
+        "startedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "endedAt": {
+          "type": "string",
+          "format": "date-time"
+        },
+        "toolCalls": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "binding": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "changeDigest",
+        "algorithm"
+      ],
+      "properties": {
+        "changeDigest": {
+          "$ref": "#/$defs/hex64",
+          "description": "Must equal the Statement subject digest."
+        },
+        "algorithm": {
+          "const": "provene-changeset-v1"
+        },
+        "parent": {
+          "$ref": "#/$defs/gitOid",
+          "description": "Advisory. A mismatch with an equal changeDigest indicates a rebase, not a failure."
+        },
+        "excluded": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            ".provene/**"
+          ],
+          "description": "Path patterns excluded from the change digest. Must include .provene/**."
+        }
+      }
+    },
+    "changes": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "granularity",
+        "files"
+      ],
+      "properties": {
+        "granularity": {
+          "enum": [
+            "hunk",
+            "file"
+          ],
+          "description": "'file' asserts only that the agent touched the file. Emitters must fall back rather than guess."
+        },
+        "files": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "path",
+              "status"
+            ],
+            "properties": {
+              "path": {
+                "type": "string",
+                "minLength": 1
+              },
+              "status": {
+                "enum": [
+                  "A",
+                  "M",
+                  "D",
+                  "R"
+                ]
+              },
+              "prePath": {
+                "type": "string",
+                "description": "Pre-image path, required for renames."
+              },
+              "preBlob": {
+                "$ref": "#/$defs/gitOidOrAbsent"
+              },
+              "postBlob": {
+                "$ref": "#/$defs/gitOidOrAbsent"
+              },
+              "attributed": {
+                "type": "array",
+                "description": "Content-anchored spans observed to be agent-produced. Unlisted regions are UNOBSERVED, never human-authored. Located by content, not position.",
+                "items": {
+                  "type": "object",
+                  "required": [
+                    "digest",
+                    "lines"
+                  ],
+                  "properties": {
+                    "digest": {
+                      "$ref": "#/$defs/sha256Ref",
+                      "description": "SHA-256 of the span text."
+                    },
+                    "lines": {
+                      "type": "integer",
+                      "minimum": 1
+                    },
+                    "anchorBefore": {
+                      "$ref": "#/$defs/sha256Ref"
+                    },
+                    "anchorAfter": {
+                      "$ref": "#/$defs/sha256Ref"
+                    }
+                  }
+                }
+              },
+              "verifiedBy": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                },
+                "description": "Identifiers of verification runs covering this path."
+              }
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "status": {
+                      "const": "R"
+                    }
+                  },
+                  "required": [
+                    "status"
+                  ]
+                },
+                "then": {
+                  "required": [
+                    "prePath"
+                  ]
+                }
+              }
+            ]
+          }
+        }
+      },
+      "allOf": [
+        {
+          "comment": "File granularity asserts nothing about regions, so attributed ranges must be absent.",
+          "if": {
+            "properties": {
+              "granularity": {
+                "const": "file"
+              }
+            },
+            "required": [
+              "granularity"
+            ]
+          },
+          "then": {
+            "properties": {
+              "files": {
+                "items": {
+                  "not": {
+                    "required": [
+                      "attributed"
+                    ]
+                  }
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "commands": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": [
+          "argv0",
+          "argvDigest",
+          "observedBy"
+        ],
+        "properties": {
+          "argv0": {
+            "type": "string",
+            "minLength": 1
+          },
+          "shape": {
+            "type": "string",
+            "description": "Present only when the full command matched an allowlist entry; the entry, not the observed text."
+          },
+          "argvDigest": {
+            "$ref": "#/$defs/hmacRef"
+          },
+          "exitCode": {
+            "type": "integer"
+          },
+          "durationMs": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "observedBy": {
+            "enum": [
+              "local",
+              "ci"
+            ]
+          }
+        }
+      }
+    },
+    "verification": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": [
+              "id",
+              "kind",
+              "result",
+              "observedBy"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "minLength": 1
+              },
+              "kind": {
+                "enum": [
+                  "test",
+                  "lint",
+                  "typecheck",
+                  "build",
+                  "check"
+                ]
+              },
+              "tool": {
+                "type": "string"
+              },
+              "result": {
+                "enum": [
+                  "PASSED",
+                  "WARNED",
+                  "FAILED"
+                ]
+              },
+              "counts": {
+                "type": "object",
+                "properties": {
+                  "passed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "failed": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "skipped": {
+                    "type": "integer",
+                    "minimum": 0
+                  },
+                  "warned": {
+                    "type": "integer",
+                    "minimum": 0
+                  }
+                }
+              },
+              "passedTests": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "warnedTests": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "failedTests": {
+                "type": "array",
+                "items": {
+                  "type": "string"
+                }
+              },
+              "url": {
+                "type": "string",
+                "format": "uri"
+              },
+              "observedBy": {
+                "enum": [
+                  "local",
+                  "ci"
+                ]
+              },
+              "baseCommit": {
+                "$ref": "#/$defs/gitOid",
+                "description": "Commit the run executed against. Required where a policy may rely on the result; guards against replay of evidence onto a different base."
+              }
+            }
+          }
+        },
+        "unverifiedPaths": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Changed paths no run in this receipt covers. Source of the reviewer-facing PR annotations."
+        }
+      }
+    },
+    "redaction": {
+      "type": "object",
+      "properties": {
+        "pathsExcluded": {
+          "type": "boolean",
+          "description": "True if configured exclusion suppressed paths, so an empty change set is distinguishable from a redacted one."
+        },
+        "allowlistId": {
+          "type": "string"
+        }
+      }
+    },
+    "humanReview": {
+      "type": "object",
+      "required": [
+        "observed"
+      ],
+      "properties": {
+        "observed": {
+          "const": false
+        }
+      },
+      "description": "Reserved. No v0.1 producer observes human review; a receipt must not claim it."
+    }
+  },
+  "$defs": {
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "gitOid": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$"
+    },
+    "gitOidOrAbsent": {
+      "type": "string",
+      "pattern": "^([0-9a-f]{40}|[0-9a-f]{64}|-)$"
+    },
+    "sha256Ref": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "hmacRef": {
+      "type": "string",
+      "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+    }
+  }
+}

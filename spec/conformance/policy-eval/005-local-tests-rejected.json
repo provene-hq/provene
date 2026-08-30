@@ -1,0 +1,110 @@
+{
+  "id": "005-local-tests-rejected",
+  "rfc": "0002",
+  "section": "7.3",
+  "description": "Locally observed test evidence does not satisfy observedBy: ci.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "required-with-exemptions",
+      "defaults": {
+        "minTier": "T2",
+        "attributionGranularity": "file"
+      },
+      "exemptions": [
+        {
+          "id": "dependabot",
+          "reason": "Automated dependency bumps carry no agent session.",
+          "author": "dependabot[bot]"
+        }
+      ],
+      "rules": [
+        {
+          "id": "docs-are-relaxed",
+          "paths": [
+            "docs/**",
+            "**/*.md"
+          ],
+          "action": "allow"
+        },
+        {
+          "id": "crypto-needs-human",
+          "paths": [
+            "src/crypto/**"
+          ],
+          "when": {
+            "agentAttributed": true
+          },
+          "require": {
+            "humanApproval": true,
+            "receipt": {
+              "minTier": "T2"
+            }
+          },
+          "action": "block",
+          "message": "Agent-authored changes under src/crypto/ require a human approver.",
+          "remedy": "Request review from @acme/security, then re-run this check."
+        },
+        {
+          "id": "everything-else",
+          "paths": [
+            "**"
+          ],
+          "require": {
+            "receipt": {
+              "minTier": "T2"
+            },
+            "tests": {
+              "result": "PASSED",
+              "observedBy": "ci",
+              "baseIsMergeBase": true
+            }
+          },
+          "action": "block",
+          "message": "Changes must carry CI-observed test evidence.",
+          "remedy": "Add tests covering the changed files."
+        }
+      ]
+    },
+    "changedPaths": [
+      "src/auth/session.ts"
+    ],
+    "receipts": [
+      {
+        "tier": "T2",
+        "paths": [
+          "src/auth/session.ts"
+        ],
+        "agentAttributed": [
+          "src/auth/session.ts"
+        ],
+        "runs": [
+          {
+            "kind": "test",
+            "result": "PASSED",
+            "observedBy": "local",
+            "baseCommit": "aaaa",
+            "covers": [
+              "src/auth/session.ts"
+            ]
+          }
+        ]
+      }
+    ],
+    "pullRequest": {
+      "humanApproved": false,
+      "mergeBase": "aaaa"
+    }
+  },
+  "expect": {
+    "outcome": "block",
+    "findings": [
+      {
+        "rule": "everything-else",
+        "path": "src/auth/session.ts",
+        "predicate": "tests.observedBy"
+      }
+    ]
+  },
+  "note": "A locally observed run is a claim by the party who wants the merge."
+}

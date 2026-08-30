@@ -1,0 +1,37 @@
+{
+  "id": "002-ordering",
+  "rfc": "0001",
+  "section": "4.1",
+  "description": "Entries supplied out of order must sort by path before digesting.",
+  "input": {
+    "entries": [
+      {
+        "status": "M",
+        "path": "z.ts",
+        "preBlob": "0000000000000000000000000000000000000003",
+        "postBlob": "0000000000000000000000000000000000000004"
+      },
+      {
+        "status": "M",
+        "path": "a.ts",
+        "preBlob": "0000000000000000000000000000000000000001",
+        "postBlob": "0000000000000000000000000000000000000002"
+      },
+      {
+        "status": "M",
+        "path": "m/n.ts",
+        "preBlob": "0000000000000000000000000000000000000005",
+        "postBlob": "0000000000000000000000000000000000000006"
+      }
+    ],
+    "excludedPrefixes": [
+      ".provene/"
+    ]
+  },
+  "expect": {
+    "canonicalPayload": "M a.ts 0000000000000000000000000000000000000001 0000000000000000000000000000000000000002\nM m/n.ts 0000000000000000000000000000000000000005 0000000000000000000000000000000000000006\nM z.ts 0000000000000000000000000000000000000003 0000000000000000000000000000000000000004",
+    "canonicalPayloadUtf8Length": 268,
+    "changeDigest": "85b6178648b3bdfcfde46bf01d8228527e9c6e8fbf6b55727528809d5db2b1d3"
+  },
+  "note": "Input order must not affect the digest."
+}

@@ -1,0 +1,43 @@
+{
+  "id": "L4-duplicate-ids",
+  "rfc": "0002",
+  "section": "12",
+  "description": "Two rules sharing an id.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "conditional",
+      "rules": [
+        {
+          "id": "same",
+          "paths": [
+            "docs/**"
+          ],
+          "require": {
+            "receipt": true
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        },
+        {
+          "id": "same",
+          "paths": [
+            "src/**"
+          ],
+          "require": {
+            "receipt": true
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        }
+      ]
+    }
+  },
+  "expect": {
+    "codes": [
+      "L4"
+    ]
+  }
+}

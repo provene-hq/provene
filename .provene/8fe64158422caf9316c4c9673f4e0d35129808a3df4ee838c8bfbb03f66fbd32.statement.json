@@ -1,0 +1,513 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "provene@main",
+      "digest": {
+        "sha256": "8fe64158422caf9316c4c9673f4e0d35129808a3df4ee838c8bfbb03f66fbd32"
+      }
+    }
+  ],
+  "predicateType": "https://provene.dev/attestation/code-change/v0.1",
+  "predicate": {
+    "provene": "0.1",
+    "attestation": {
+      "tier": "T0",
+      "trustRoot": {
+        "kind": "none"
+      },
+      "transparencyLog": {
+        "published": false
+      }
+    },
+    "agent": {
+      "tool": "claude-code",
+      "model": "claude-opus-5",
+      "modelSource": "reported"
+    },
+    "task": {
+      "ref": "https://github.com/provene-hq/provene/issues/1",
+      "digest": "hmac-sha256:3a2a61b7f26efb76a3719a297d4948e2e1d60d59462aa382b98d14ed1fa58751",
+      "digestScope": "repo",
+      "keySource": "root-commit"
+    },
+    "session": {
+      "id": "cowork-2026-08-30",
+      "startedAt": "2026-08-30T21:33:15.825Z",
+      "endedAt": "2026-08-30T21:33:24.390Z",
+      "toolCalls": 56
+    },
+    "binding": {
+      "changeDigest": "8fe64158422caf9316c4c9673f4e0d35129808a3df4ee838c8bfbb03f66fbd32",
+      "algorithm": "provene-changeset-v1",
+      "parent": "c7a216029806953d24d6474a38273a68c7bde711",
+      "excluded": [
+        ".provene/"
+      ]
+    },
+    "changes": {
+      "granularity": "file",
+      "files": [
+        {
+          "path": "packages/cli/package.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "ef1f02efe8079313155d060c5218180eeb383c0f",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/src/attribution.ts",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "cc72a0876c3ae0a6333105a338826e3c32c8ef01",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/src/changedigest.ts",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "4ce1b259a10291376fbc4400cfa66a1a51101b97",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/src/cli.ts",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "360bb1835d55eacd39877a45e045ff66d8094544",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/src/git.ts",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "0ea46ab102d949d93ba01358c0d05143ce88b6df",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/src/glob.ts",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "9ff4943d5cf3759be5c29b847cc3ad565149b9f5",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/src/journal.ts",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "ef5b60f202e202657b0a45f54506409ced652f35",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/src/receipt.ts",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "871b8fd1ddf315c03f567a2fe6e5a251a267978b",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/src/redact.ts",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "86916d1fd8afcff9bf5e705424ea7f2d2def388a",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/test/conformance.test.ts",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "abc907f91b922f9e163a96564a8201b48567c591",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/tsconfig.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "d733d8d01962ec8d9d6aaf9ac940f6decff5effa",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/README.md",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "0e9477202f1e04810c1dadbd22cf37de7c7c9f8b",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/attribution/001-exact.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "18558baee65105271d12557c5a56df105eb7a7ab",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/attribution/002-insert-above.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "bb73d544d7a44d40f80d4fb47b31c2fc6dfedadd",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/attribution/003-edit-inside.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "992500ffbfd8d859d87b745181f80bc41023abaf",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/attribution/004-anchor-changed.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "95b47fdc3cb2365702c039ac947e15e45110ace0",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/attribution/005-duplicate-span.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "4cef3ba840316233052cc641e6ea95752bb3940c",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/changedigest/001-basic.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "5e51b5484c6dd4a69010b32ec79bba82d2330630",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/changedigest/002-ordering.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "fff074b38218721767b89010c196a2a8200c5c80",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/changedigest/003-exclusion.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "5f63b66b27c0ea7a4469c5f70f98453da20ec4dc",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/changedigest/004-rename.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "f464d8fb07b97ef07faec6d11dc04050933c7328",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/changedigest/005-delete.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "882f778e756127621340b73c6b0b64d1fe390417",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/changedigest/006-utf16-trap.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "2718f68eb160d72548c55388f38223402728b3b0",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/changedigest/007-empty.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "7acab41bb3c4ab63569b35dfcb1872953d04003b",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/glob/cases.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "649d96b1343bd6c90cf89e642a37cc7f8b361a23",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-eval/001-governing-rule.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "e4a3c506c94d568f9a35455b3f9fa34b7cdc8885",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-eval/002-allow-shortcircuits.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "4355b25489ae73d8eafd84afc9fb28c3edc73bda",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-eval/003-conditional-neutral.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "f157c32db447a24cff868e6d42696b0998ef3d79",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-eval/004-tier-insufficient.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "0592e1b4ee8f87fa293000e514033a39b0c266ea",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-eval/005-local-tests-rejected.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "611a30234b61f7c681e4bf36c7e2afbd7516ad6f",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-eval/006-replayed-evidence.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "26d1c140dda584d3ad48f84f22812a48464af3bf",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-eval/007-crypto-human-approval.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "76cd28bf59a482661cb91599bdcf223fd2b3c565",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-eval/008-when-not-met.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "06c3d2e83195799a08ea2ee2ec63c532f675e236",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-lint/L1-identical-patterns.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "6292436331b0d93c56609b867a7340b8fd5f7859",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-lint/L1-shadowed-by-prefix.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "2db516a844b944922f5838bd973c356d2278c9e5",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-lint/L2-after-catchall.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "32907db5dcb2e91213b078334ec0f6a19529c8f7",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-lint/L3-missing-remedy.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "240b776e57fb91634f36f366bdde1c53eada6fb3",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-lint/L4-duplicate-ids.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "21a5dff8985b712c2ca96ec338c5f4e0e663864a",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-lint/L5-inert-section.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "81779296ad514022c8b7d3ae4bf02a586099d6f1",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-lint/L6-tests-without-ci.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "ee384821dea5416f7d8deb8228cf77c33efee4a6",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-lint/L7-unanchored-pattern.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "9f773779b1ebbcf06bb7799d64129feaebecc41a",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/policy-lint/clean.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "287b814f1703dea333b3a76e0398ae693f330744",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/runner/generate.py",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "d07169afefc144de334a1ef4c239fb2b2d939cf9",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/conformance/runner/run.py",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "5cd77194ada8182e5a7e5ee6857ec7e6d16aae10",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/examples/policy/enrolled.yml",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "16b3748960512d691993f1d71390dde3a5b633fa",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/examples/policy/minimal.yml",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "7fc08cc180cdf08531107f8561b7a27f8765ac9e",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/examples/policy/path-scoped.yml",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "f5a26b0e4b9424030b82f5ae8c90aee4220b41e5",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/examples/pr-aggregate.dsse.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "a2bbc89084d3d8790a00bb8b532d42992045fc3b",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/examples/t0-local.statement.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "cb388cf42f22840199741331da83b2fa84f3f5f3",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/examples/t2-ci-promoted.dsse.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "71364098c8f00881c3f55daae4f7cca62267bbc8",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/rfc/0001-receipt-schema.md",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "12b151596ae1f41fe034999b77c23559c1311ea9",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/rfc/0002-policy-grammar.md",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "c85e9d1b07c0459adc39043e4c57782c601a6e3f",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/schema/provene-policy-v1.schema.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "654151c886b3498c89ab1882c485be77976df781",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/schema/provene-receipt-v0.1.schema.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "d6b28821d09bf9b500870e00af20e7abe4a27257",
+          "verifiedBy": []
+        },
+        {
+          "path": "spec/threat-model.md",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "dbff5c090fd97b7d24daa8c80723ee247037a5b0",
+          "verifiedBy": []
+        }
+      ]
+    },
+    "commands": [
+      {
+        "argv0": "node",
+        "argvDigest": "hmac-sha256:5dd36b14f7d6456c034e341e0f4f53d3344105dc51fdd113ba5de019f4484fde",
+        "observedBy": "local"
+      }
+    ],
+    "verification": {
+      "runs": [],
+      "unverifiedPaths": [
+        "packages/cli/package.json",
+        "packages/cli/src/attribution.ts",
+        "packages/cli/src/changedigest.ts",
+        "packages/cli/src/cli.ts",
+        "packages/cli/src/git.ts",
+        "packages/cli/src/glob.ts",
+        "packages/cli/src/journal.ts",
+        "packages/cli/src/receipt.ts",
+        "packages/cli/src/redact.ts",
+        "packages/cli/test/conformance.test.ts",
+        "packages/cli/tsconfig.json",
+        "spec/conformance/README.md",
+        "spec/conformance/attribution/001-exact.json",
+        "spec/conformance/attribution/002-insert-above.json",
+        "spec/conformance/attribution/003-edit-inside.json",
+        "spec/conformance/attribution/004-anchor-changed.json",
+        "spec/conformance/attribution/005-duplicate-span.json",
+        "spec/conformance/changedigest/001-basic.json",
+        "spec/conformance/changedigest/002-ordering.json",
+        "spec/conformance/changedigest/003-exclusion.json",
+        "spec/conformance/changedigest/004-rename.json",
+        "spec/conformance/changedigest/005-delete.json",
+        "spec/conformance/changedigest/006-utf16-trap.json",
+        "spec/conformance/changedigest/007-empty.json",
+        "spec/conformance/glob/cases.json",
+        "spec/conformance/policy-eval/001-governing-rule.json",
+        "spec/conformance/policy-eval/002-allow-shortcircuits.json",
+        "spec/conformance/policy-eval/003-conditional-neutral.json",
+        "spec/conformance/policy-eval/004-tier-insufficient.json",
+        "spec/conformance/policy-eval/005-local-tests-rejected.json",
+        "spec/conformance/policy-eval/006-replayed-evidence.json",
+        "spec/conformance/policy-eval/007-crypto-human-approval.json",
+        "spec/conformance/policy-eval/008-when-not-met.json",
+        "spec/conformance/policy-lint/L1-identical-patterns.json",
+        "spec/conformance/policy-lint/L1-shadowed-by-prefix.json",
+        "spec/conformance/policy-lint/L2-after-catchall.json",
+        "spec/conformance/policy-lint/L3-missing-remedy.json",
+        "spec/conformance/policy-lint/L4-duplicate-ids.json",
+        "spec/conformance/policy-lint/L5-inert-section.json",
+        "spec/conformance/policy-lint/L6-tests-without-ci.json",
+        "spec/conformance/policy-lint/L7-unanchored-pattern.json",
+        "spec/conformance/policy-lint/clean.json",
+        "spec/conformance/runner/generate.py",
+        "spec/conformance/runner/run.py",
+        "spec/examples/policy/enrolled.yml",
+        "spec/examples/policy/minimal.yml",
+        "spec/examples/policy/path-scoped.yml",
+        "spec/examples/pr-aggregate.dsse.json",
+        "spec/examples/t0-local.statement.json",
+        "spec/examples/t2-ci-promoted.dsse.json",
+        "spec/rfc/0001-receipt-schema.md",
+        "spec/rfc/0002-policy-grammar.md",
+        "spec/schema/provene-policy-v1.schema.json",
+        "spec/schema/provene-receipt-v0.1.schema.json",
+        "spec/threat-model.md"
+      ]
+    },
+    "humanReview": {
+      "observed": false
+    },
+    "redaction": {
+      "pathsExcluded": false,
+      "allowlistId": "provene-default-v1"
+    }
+  }
+}

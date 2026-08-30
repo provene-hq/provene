@@ -1,0 +1,31 @@
+{
+  "id": "L3-missing-remedy",
+  "rfc": "0002",
+  "section": "12",
+  "description": "A block rule with no remedy.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "conditional",
+      "rules": [
+        {
+          "id": "r",
+          "paths": [
+            "**"
+          ],
+          "require": {
+            "receipt": true
+          },
+          "action": "block",
+          "message": "m"
+        }
+      ]
+    }
+  },
+  "expect": {
+    "codes": [
+      "L3"
+    ]
+  },
+  "note": "Also caught by the JSON Schema; duplicated in lint so a YAML-first implementation cannot skip it."
+}

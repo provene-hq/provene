@@ -1,0 +1,31 @@
+{
+  "id": "006-utf16-trap",
+  "rfc": "0001",
+  "section": "4.1",
+  "description": "Sorting is by UTF-8 bytes, which equals code point order. A naive JavaScript Array.prototype.sort() compares UTF-16 code units and orders these two paths the OPPOSITE way, because astral characters are surrogate pairs beginning 0xD800-0xDBFF, which compare below U+FF21.",
+  "input": {
+    "entries": [
+      {
+        "status": "A",
+        "path": "docs/Ａ.md",
+        "preBlob": "-",
+        "postBlob": "0000000000000000000000000000000000001111"
+      },
+      {
+        "status": "A",
+        "path": "docs/𠀀.md",
+        "preBlob": "-",
+        "postBlob": "0000000000000000000000000000000000002222"
+      }
+    ],
+    "excludedPrefixes": [
+      ".provene/"
+    ]
+  },
+  "expect": {
+    "canonicalPayload": "A docs/Ａ.md - 0000000000000000000000000000000000001111\nA docs/𠀀.md - 0000000000000000000000000000000000002222",
+    "canonicalPayloadUtf8Length": 114,
+    "changeDigest": "5771fb37e3c6897ef526b4182699db206dda0227dd8919580a67c36ab14a93b7"
+  },
+  "note": "Correct order: U+FF21 (65313) before U+20000 (131072). UTF-16 code-unit order yields the reverse. An implementation that passes every other fixture and fails this one has a real bug that will surface on a repository containing emoji or CJK extension characters in a path."
+}

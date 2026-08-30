@@ -1,0 +1,30 @@
+{
+  "id": "001-basic",
+  "rfc": "0001",
+  "section": "4.1",
+  "description": "One modification and one addition.",
+  "input": {
+    "entries": [
+      {
+        "status": "M",
+        "path": "src/auth/session.ts",
+        "preBlob": "0000000000000000000000000000000000003f1c",
+        "postBlob": "000000000000000000000000000000000000a07e"
+      },
+      {
+        "status": "A",
+        "path": "src/auth/session.test.ts",
+        "preBlob": "-",
+        "postBlob": "00000000000000000000000000000000000017dd"
+      }
+    ],
+    "excludedPrefixes": [
+      ".provene/"
+    ]
+  },
+  "expect": {
+    "canonicalPayload": "A src/auth/session.test.ts - 00000000000000000000000000000000000017dd\nM src/auth/session.ts 0000000000000000000000000000000000003f1c 000000000000000000000000000000000000a07e",
+    "canonicalPayloadUtf8Length": 173,
+    "changeDigest": "781b51364f614e59b7e9ada7592b335f2dd763fdff043599bafb329ee38955f2"
+  }
+}

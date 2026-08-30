@@ -1,0 +1,25 @@
+{
+  "id": "004-rename",
+  "rfc": "0001",
+  "section": "4.1",
+  "description": "Renames append the pre-image path as a trailing field.",
+  "input": {
+    "entries": [
+      {
+        "status": "R",
+        "path": "src/auth/session.ts",
+        "prePath": "src/session.ts",
+        "preBlob": "0000000000000000000000000000000000003f1c",
+        "postBlob": "0000000000000000000000000000000000003f1c"
+      }
+    ],
+    "excludedPrefixes": [
+      ".provene/"
+    ]
+  },
+  "expect": {
+    "canonicalPayload": "R src/auth/session.ts 0000000000000000000000000000000000003f1c 0000000000000000000000000000000000003f1c <-src/session.ts",
+    "canonicalPayloadUtf8Length": 120,
+    "changeDigest": "134a316c4799ae302f87bb53fd70d26f82f48c38705c3802174107a2897547b1"
+  }
+}

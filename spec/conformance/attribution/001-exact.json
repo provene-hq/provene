@@ -1,0 +1,24 @@
+{
+  "id": "001-exact",
+  "rfc": "0001",
+  "section": "6.3",
+  "description": "The span is present unchanged.",
+  "input": {
+    "attributed": {
+      "digest": "sha256:c46f62b4ec47e3e0f453f3185a934e21aec3326c0db46585e871ae11b378b9fa",
+      "lines": 3,
+      "anchorBefore": "sha256:6e857d71220886555c4a4c44ce818e90da0c6b929dea8d9c4da38196841205d7",
+      "anchorAfter": "sha256:0bce017696c7f37b7ba2ae1d342d8955b67f86837ff76a92dcc1ff9f0263528b"
+    },
+    "fileLines": [
+      "// auth helpers",
+      "export function verify(t) {",
+      "  return check(t);",
+      "}",
+      "// end"
+    ]
+  },
+  "expect": {
+    "located": true
+  }
+}

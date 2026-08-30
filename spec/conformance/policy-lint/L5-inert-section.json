@@ -1,0 +1,38 @@
+{
+  "id": "L5-inert-section",
+  "rfc": "0002",
+  "section": "12",
+  "description": "Exemptions declared under a mode that never consults them.",
+  "input": {
+    "policy": {
+      "version": 1,
+      "mode": "conditional",
+      "exemptions": [
+        {
+          "id": "d",
+          "reason": "bot",
+          "author": "dependabot[bot]"
+        }
+      ],
+      "rules": [
+        {
+          "id": "r",
+          "paths": [
+            "**"
+          ],
+          "require": {
+            "receipt": true
+          },
+          "action": "block",
+          "message": "m",
+          "remedy": "r"
+        }
+      ]
+    }
+  },
+  "expect": {
+    "codes": [
+      "L5"
+    ]
+  }
+}

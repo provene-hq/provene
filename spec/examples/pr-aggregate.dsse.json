@@ -1,0 +1,73 @@
+{
+  "payloadType": "application/vnd.in-toto+json",
+  "payload": "<base64(canonical JSON of the statement below)>",
+  "signatures": [{ "keyid": "", "sig": "MEQCIF2…" }],
+  "_statement_for_readability_only": {
+    "_type": "https://in-toto.io/Statement/v1",
+    "subject": [
+      {
+        "name": "acme/api@refs/heads/main",
+        "digest": { "sha256": "e40aa71c8b53d9f206e1cc7b4a9350df82e6b107cc94ad3e5f7802b1da64c9f3" }
+      }
+    ],
+    "predicateType": "https://provene.dev/attestation/code-change-aggregate/v0.1",
+    "predicate": {
+      "provene": "0.1",
+      "attestation": {
+        "tier": "T2",
+        "attester": {
+          "identity": "repo:acme/api:ref:refs/heads/main",
+          "issuer": "https://token.actions.githubusercontent.com"
+        },
+        "trustRoot": { "kind": "sigstore-private", "url": "https://fulcio.acme-internal.example" },
+        "transparencyLog": { "published": false }
+      },
+      "merge": {
+        "kind": "squash",
+        "pullRequest": "https://github.com/acme/api/pull/883",
+        "mergeCommit": "f10c93aa7e2b58d4106fc3b7d29e58a04c1b7de9",
+        "targetRef": "refs/heads/main"
+      },
+      "binding": {
+        "changeDigest": "e40aa71c8b53d9f206e1cc7b4a9350df82e6b107cc94ad3e5f7802b1da64c9f3",
+        "algorithm": "provene-changeset-v1",
+        "parent": "2b7e0c14da9f38065ce1b7a04d3f92c817ea60bb",
+        "excluded": [".provene/**"]
+      },
+      "constituents": [
+        {
+          "receiptDigest": "sha256:5c1a0e7fb32d84906ac7e15b0d29f37a4e8cb210df9375a6e0c14b8827dfa091",
+          "changeDigest": "b71f4c9a2e5d80f316ac47bb90e2d5c8813fa06e4d97cc21b5e0f7a3d9481c62",
+          "tier": "T2",
+          "commit": "6ae10d3fc82b47590ea1cd7b0356f28149c0b7ee"
+        },
+        {
+          "receiptDigest": "sha256:aa30f719c4e5b28160d7ac93f0b41e8572cd60a91b3f7e0428d5cc1746b0e9f2",
+          "changeDigest": "3d90bb147ca62f80e51d7cc0a9b4e3821f7d06ca594e1b380a7fc2d6091e4b57",
+          "tier": "T2",
+          "commit": "c04b7e19aa3d5628f107cb94e0d31a7853fb6cc0"
+        }
+      ],
+      "coverage": {
+        "constituentsFound": 2,
+        "commitsInPullRequest": 2,
+        "complete": true
+      },
+      "verification": {
+        "runs": [
+          {
+            "id": "run-merge-1",
+            "kind": "test",
+            "tool": "vitest",
+            "result": "PASSED",
+            "counts": { "passed": 51, "failed": 0, "skipped": 2 },
+            "url": "https://github.com/acme/api/actions/runs/19342550",
+            "observedBy": "ci"
+          }
+        ],
+        "unverifiedPaths": ["docs/auth.md"]
+      },
+      "humanReview": { "observed": false }
+    }
+  }
+}
