@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 /** provene — portable, signed evidence receipts for AI-generated code changes. */
-import { readFileSync, writeFileSync, mkdirSync, existsSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
 import { join } from "node:path";
 import { diffEntries, repoRoot, headCommit, rootCommit, git } from "./git.ts";
 import { append, read, journalDir, recordError } from "./journal.ts";
@@ -91,22 +91,71 @@ function cmdVerify(args: Record<string, string | boolean>): number {
 }
 
 function cmdDoctor(): number {
-  const checks: Array<[string, boolean, string]> = [];
+  // Three states, not two. A checkup that reports FAIL for a normal condition
+  // is a checkup people stop running -- the same reason a merge gate with a
+  // high false-positive rate gets switched off.
+  type Status = "ok" | "warn" | "fail";
+  const checks: Array<[Status, string, string]> = [];
   let root = "";
-  try { root = repoRoot(); checks.push(["git repository", true, root]); }
-  catch { checks.push(["git repository", false, "not inside a git repository"]); }
-  try { checks.push(["root commit reachable", true, rootCommit().slice(0, 12)]); }
-  catch { checks.push(["root commit reachable", false, "no root commit"]); }
-  checks.push(["journal directory", existsSync(journalDir()), journalDir()]);
-  const attrs = root !== "" ? join(root, ".gitattributes") : "";
-  const hasAttrs = attrs !== "" && existsSync(attrs) &&
-    readFileSync(attrs, "utf8").includes(".provene/");
-  checks.push([".gitattributes stanza", hasAttrs,
-    hasAttrs ? "receipts collapse in review" : "add: .provene/** linguist-generated=true -diff"]);
-  try { checks.push(["git version", true, git(["--version"])]); } catch { /* covered above */ }
 
-  for (const [name, ok, detail] of checks) out(`${ok ? "  ok  " : " FAIL "} ${name.padEnd(26)} ${detail}`);
-  return checks.every(([, ok]) => ok) ? 0 : 1;
+  try {
+    root = repoRoot();
+    checks.push(["ok", "git repository", root]);
+  } catch {
+    checks.push(["fail", "git repository", "not inside a git repository"]);
+  }
+
+  try {
+    checks.push(["ok", "root commit reachable", rootCommit().slice(0, 12)]);
+  } catch {
+    checks.push(["fail", "root commit reachable", "no root commit — commit something first"]);
+  }
+
+  // The journal is created on first use, so absence is normal on a fresh
+  // install. What actually matters is whether we can write there when the
+  // time comes.
+  const jdir = journalDir();
+  if (existsSync(jdir)) {
+    try {
+      const probe = join(jdir, ".provene-write-probe");
+      writeFileSync(probe, "", "utf8");
+      rmSync(probe);
+      checks.push(["ok", "journal directory", jdir]);
+    } catch {
+      checks.push(["fail", "journal directory", `${jdir} exists but is not writable`]);
+    }
+  } else {
+    try {
+      mkdirSync(jdir, { recursive: true });
+      rmSync(jdir, { recursive: true });
+      checks.push(["ok", "journal directory", `${jdir} (created on first session)`]);
+    } catch {
+      checks.push(["fail", "journal directory", `cannot create ${jdir}`]);
+    }
+  }
+
+  // Cosmetic: without it receipts still work, they just clutter review.
+  const attrs = root !== "" ? join(root, ".gitattributes") : "";
+  const hasAttrs = attrs !== "" && existsSync(attrs) && readFileSync(attrs, "utf8").includes(".provene/");
+  checks.push(hasAttrs
+    ? ["ok", ".gitattributes stanza", "receipts collapse in review"]
+    : ["warn", ".gitattributes stanza", "add: .provene/** linguist-generated=true -diff"]);
+
+  try {
+    checks.push(["ok", "git version", git(["--version"])]);
+  } catch { /* the repository check already covers a missing git */ }
+
+  const mark = { ok: "  ok  ", warn: " warn ", fail: " FAIL " } as const;
+  for (const [status, name, detail] of checks) {
+    out(`${mark[status]} ${name.padEnd(26)} ${detail}`);
+  }
+
+  const failed = checks.filter(([s]) => s === "fail").length;
+  const warned = checks.filter(([s]) => s === "warn").length;
+  if (failed > 0) out(`\n${failed} check(s) failed.`);
+  else if (warned > 0) out(`\nReady. ${warned} advisory item(s) above.`);
+  else out("\nReady.");
+  return failed > 0 ? 1 : 0;
 }
 
 function cmdRecord(args: Record<string, string | boolean>): number {
