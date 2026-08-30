@@ -1,4 +1,6 @@
-# provene
+# proveneio
+
+*Published as `proveneio`; the command it installs is `provene`. The unscoped name `provene` is blocked by npm's similarity filter against the unrelated package `projen`.*
 
 Portable, cryptographically signed evidence receipts for AI-generated code changes.
 
@@ -7,7 +9,7 @@ When a coding agent finishes a session, this CLI records what happened — which
 **Pre-alpha.** `record`, `emit`, `verify` and `doctor` work. Signing, CI promotion, the GitHub Action and the policy engine are not built yet.
 
 ```sh
-npm i -g provene
+npm i -g proveneio
 provene doctor
 ```
 
