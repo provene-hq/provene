@@ -1,0 +1,10 @@
+{
+  "name": "provene-monorepo",
+  "private": true,
+  "workspaces": ["packages/*"],
+  "scripts": {
+    "test": "node --test packages/cli/test/*.test.ts",
+    "conformance": "python3 spec/conformance/runner/run.py",
+    "typecheck": "npm --workspace provene run typecheck"
+  }
+}

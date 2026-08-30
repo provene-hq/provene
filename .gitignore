@@ -1,0 +1,10 @@
+node_modules/
+dist/
+*.tsbuildinfo
+.DS_Store
+Thumbs.db
+*.log
+
+# NOTE: .provene/ is deliberately NOT ignored. Receipts are committed in-tree —
+# that is the whole design (RFC 0001 section 8). Adding one here would silently
+# disable the product in its own repository.

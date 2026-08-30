@@ -1,0 +1,8 @@
+# Receipts are generated evidence, not reviewable source. Collapse them in diffs
+# and keep them out of language statistics. RFC 0001 section 8.
+.provene/** linguist-generated=true -diff
+
+# Conformance fixtures are the specification. They should be reviewed.
+spec/conformance/** -linguist-generated
+
+* text=auto eol=lf
