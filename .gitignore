@@ -8,3 +8,9 @@ Thumbs.db
 # NOTE: .provene/ is deliberately NOT ignored. Receipts are committed in-tree —
 # that is the whole design (RFC 0001 section 8). Adding one here would silently
 # disable the product in its own repository.
+
+# Business strategy, pricing, gate criteria, competitive analysis and review
+# correspondence. Not for a public repository. The THREAT MODEL is public and
+# lives at spec/threat-model.md — publishing that builds trust; publishing your
+# kill gates and pricing does not.
+planning/

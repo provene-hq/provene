@@ -25,7 +25,7 @@ A receipt generated on your machine is a **self-attestation by the person who wa
 - **Forged test evidence** is prevented, because CI re-observes the run and signs it with an identity that has no stake in the merge.
 - **Concealment** — hiding that an agent was involved — is resisted only under `enrolled` policy mode. Under the default mode it is not. Any claim otherwise has to name the mode.
 
-See [`spec/rfc/0001-receipt-schema.md`](spec/rfc/0001-receipt-schema.md) and the threat model.
+See [`spec/rfc/0001-receipt-schema.md`](spec/rfc/0001-receipt-schema.md) and [the threat model](spec/threat-model.md).
 
 ## Layout
 
@@ -34,6 +34,7 @@ spec/rfc/          RFC 0001 (receipt schema), RFC 0002 (policy grammar)
 spec/schema/       JSON Schema for receipts and policies
 spec/examples/     worked receipts and policies
 spec/conformance/  the fixtures — these, not the prose, are the specification
+spec/threat-model.md   what breaks this, and what it does not defend against
 packages/cli/      reference implementation (TypeScript, no runtime dependencies)
 ```
 
