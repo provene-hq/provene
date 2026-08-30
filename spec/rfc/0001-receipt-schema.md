@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.1.2 |
+| **Version** | 0.1.3 |
 | **Predicate type** | `https://provene.dev/attestation/code-change/v0.1` |
 | **Date** | 2026-08-30 |
 | **Supersedes** | — |
@@ -133,7 +133,17 @@ A change digest does not survive a squash, a rebase that resolves conflicts, or 
 
 `modelSource` MUST be `reported` (the tool supplied it) or `configured` (read from local configuration). A model identifier that the emitter inferred MUST NOT be recorded.
 
-### 6.2 Task
+### 6.2 Emitter
+
+```json
+"emitter": { "name": "provene", "version": "0.0.2" }
+```
+
+REQUIRED. The software that produced this receipt, as distinct from the agent whose work it describes.
+
+**Rationale.** Emitters have bugs, and some of those bugs change what a receipt *means* rather than making it malformed. A receipt whose `unverifiedPaths` was computed from attribution instead of verification (the defect that renamed that field in v0.1.2) validates against the schema and is silently wrong. Without an emitter version there is no way to find the affected receipts afterwards, and a corpus of evidence you cannot audit for known defects is not evidence. Implementations MUST NOT infer or hardcode this value; it is read from the emitter's own package metadata.
+
+### 6.3 Task
 
 ```json
 "task": {
@@ -162,7 +172,7 @@ The digest is a linkage commitment, not evidence. It permits a holder of the pla
 
 Plaintext task or prompt text MUST NOT appear in a receipt.
 
-### 6.3 Changes and attribution
+### 6.4 Changes and attribution
 
 ```json
 "changes": {
@@ -201,7 +211,7 @@ Regions not listed in `attributed` are **unobserved**. They MUST NOT be describe
 
 **`changes.files` MUST be exactly the set of entries the change digest was computed over, and a verifier MUST confirm this by recomputing the digest from `changes.files` alone.** Without that check the readable half of a receipt is unbound from the signed half: an attacker can rewrite recorded blob IDs, paths or statuses, and the receipt still verifies against the working tree because the subject digest is recomputed from the tree rather than from what the receipt says. This was found by tampering with a receipt produced by the reference implementation, which reported it as well formed.
 
-### 6.4 Commands
+### 6.5 Commands
 
 ```json
 "commands": [
@@ -222,7 +232,7 @@ Full argument vectors MUST NOT be recorded. This is an allowlist, not a denylist
 
 `observedBy` MUST be `local` or `ci` and identifies who watched the command run, independent of who signed the receipt.
 
-### 6.5 Verification
+### 6.6 Verification
 
 Field names follow the [in-toto Test Result predicate v0.1](https://github.com/in-toto/attestation/blob/main/spec/predicates/test-result.md) where they overlap, so that receipts remain legible to tooling already in that ecosystem.
 
@@ -257,7 +267,7 @@ Raw standard output or standard error MUST NOT be recorded, at any tier. Counts,
 
 **On the name.** This field was `unattributedPaths` through v0.1.1. It is about *verification* coverage, not attribution, and the two are separate concerns here — a path can be agent-attributed and well tested, or unattributed and untested. Writing the emitter made the collision plain: the implementation computed the field from the attribution journal, matching the old name rather than the specified meaning, and passed every schema check while doing so. Renamed in v0.1.2. This field is the reviewer-facing product: it is what the PR annotation is generated from.
 
-### 6.6 Human review
+### 6.7 Human review
 
 ```json
 "humanReview": { "observed": false }
@@ -357,6 +367,7 @@ Marked for external review; none block a reference implementation.
 
 ## Changelog
 
+- **0.1.3** (2026-08-30) — added the required `emitter` field. Found when the CLI reported a hardcoded version that had drifted from its package metadata: a receipt named the agent that did the work but nothing about the software that wrote the receipt, so receipts produced by a defective emitter could not be identified afterwards. Sections renumbered from 6.2.
 - **0.1.2** (2026-08-30) — reference implementation. `unattributedPaths` renamed `unverifiedPaths`: the old name invited implementations to compute it from attribution rather than from verification runs, and one did. Added the normative requirement that `changes.files` reproduce the subject digest, after a tampered receipt verified clean.
 - **0.1.1** (2026-08-30) — round-3 review. Content-anchored attribution replaces line ranges; `file` is the only required granularity. `verification.runs[].baseCommit` added against cross-branch replay of verification evidence. Filenames declare encoding (`.statement.json` / `.dsse.json`). Task digest salt derived from the root commit, described as a salt rather than a key, with `keySource` recorded. Hook-failure semantics and the policy-mode scoping of concealment resistance added to §13.
 - **0.1.0** (2026-08-30) — initial draft.

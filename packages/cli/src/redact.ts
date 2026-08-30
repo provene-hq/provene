@@ -1,5 +1,5 @@
 /**
- * RFC 0001 sections 6.4 and 10 — the redaction contract.
+ * RFC 0001 sections 6.5 and 10 — the redaction contract.
  *
  * Allowlist, never denylist. Argument vectors carry credentials routinely
  * (`curl -H "Authorization: Bearer $TOKEN"`), and a denylist in a trust product

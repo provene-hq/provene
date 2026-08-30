@@ -4,7 +4,7 @@
   "signatures": [
     {
       "keyid": "",
-      "sig": "MEUCIQD\u2026"
+      "sig": "MEUCIQD…"
     }
   ],
   "_statement_for_readability_only": {
@@ -44,6 +44,10 @@
         "toolVersion": "2.4.1",
         "model": "claude-opus-5",
         "modelSource": "reported"
+      },
+      "emitter": {
+        "name": "provene",
+        "version": "0.0.2"
       },
       "task": {
         "ref": "https://github.com/acme/api/issues/412",

@@ -23,6 +23,7 @@ export interface BuildInput {
                     model?: string; modelSource: "reported" | "configured" };
   readonly task?: { ref?: string; sessionRef?: string; digest?: string };
   readonly session?: { id: string; startedAt: string; endedAt: string; toolCalls: number };
+  readonly emitter: { name: string; version: string };
   readonly commands: readonly RedactedCommand[];
   readonly attributedPaths: readonly string[];
 }
@@ -45,6 +46,7 @@ export function buildT0(input: BuildInput): Statement {
         transparencyLog: { published: false },
       },
       agent: input.agent,
+      emitter: input.emitter,
       ...(input.task !== undefined
         ? { task: { ...input.task, ...(input.task.digest !== undefined
             ? { digestScope: "repo", keySource: "root-commit" } : {}) } }
@@ -57,7 +59,7 @@ export function buildT0(input: BuildInput): Statement {
         excluded: [...DEFAULT_EXCLUDED_PREFIXES],
       },
       changes: {
-        // RFC 0001 6.3: `file` is the only granularity a v0.1 emitter must produce.
+        // RFC 0001 6.4: `file` is the only granularity a v0.1 emitter must produce.
         // Unlisted paths are UNOBSERVED, never human-authored.
         granularity: "file",
         files: changed.map((e) => ({
@@ -72,7 +74,7 @@ export function buildT0(input: BuildInput): Statement {
       commands: input.commands,
       verification: {
         runs: [],
-        // RFC 0001 6.5: paths that no verification RUN covers. A T0 receipt has
+        // RFC 0001 6.6: paths that no verification RUN covers. A T0 receipt has
         // no runs, so every changed path is unverified -- which is the true claim.
         unverifiedPaths: changed.map((e) => e.path),
       },
@@ -130,7 +132,7 @@ export function checkStatement(
   if (claimed === undefined) problems.push("subject digest missing");
   else if (binding !== claimed) problems.push("binding.changeDigest does not equal the subject digest");
 
-  // RFC 0001 6.3: changes.files MUST be exactly the entries the digest was taken
+  // RFC 0001 6.4: changes.files MUST be exactly the entries the digest was taken
   // over, and a verifier must confirm it. Without this check the human-readable
   // half of the receipt is unbound from the signed half: an attacker can rewrite
   // the recorded blob ids, paths or statuses and the receipt still verifies

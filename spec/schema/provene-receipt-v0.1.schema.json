@@ -9,6 +9,7 @@
     "provene",
     "attestation",
     "agent",
+    "emitter",
     "binding",
     "changes"
   ],
@@ -206,6 +207,25 @@
             "configured"
           ],
           "description": "How the model identifier was obtained. Inferred identifiers must not be recorded."
+        }
+      }
+    },
+    "emitter": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "name",
+        "version"
+      ],
+      "description": "The software that produced this receipt. Required so that receipts written by a known-buggy emitter can be identified after the fact.",
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "version": {
+          "type": "string",
+          "minLength": 1
         }
       }
     },

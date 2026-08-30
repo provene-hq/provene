@@ -7,8 +7,13 @@ import { append, read, journalDir, recordError } from "./journal.ts";
 import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID } from "./redact.ts";
 import { buildT0, canonicalJson, checkStatement, receiptFileName, type Statement } from "./receipt.ts";
 import { changeDigest } from "./changedigest.ts";
+import { createRequire } from "node:module";
 
-const VERSION = "0.0.0-dev";
+// Read the real version rather than restating it. A hardcoded constant drifts
+// from package.json the moment either is bumped, and a provenance tool that
+// misreports its own version has no business recording anyone else's.
+// Resolves to the package root from both dist/cli.js and src/cli.ts.
+const VERSION = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 const out = (s: string): void => { process.stdout.write(s + "\n"); };
 
 function cmdEmit(args: Record<string, string | boolean>): number {
@@ -45,6 +50,7 @@ function cmdEmit(args: Record<string, string | boolean>): number {
         modelSource: "reported",
       },
       ...(task !== undefined ? { task } : {}),
+      emitter: { name: "provene", version: VERSION },
       session: { id: sessionId, startedAt: journal[0]?.at ?? new Date().toISOString(),
                  endedAt: new Date().toISOString(), toolCalls: journal.length },
       commands, attributedPaths,

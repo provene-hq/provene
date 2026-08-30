@@ -1,5 +1,5 @@
 /**
- * RFC 0001 section 6.3 — content-anchored attribution.
+ * RFC 0001 section 6.4 — content-anchored attribution.
  *
  * Spans are located by content, not position. Inserting a line above an
  * attributed span does not invalidate it; editing text inside the span does,
