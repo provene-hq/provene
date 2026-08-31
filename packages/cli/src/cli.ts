@@ -139,6 +139,7 @@ function cmdCheck(args: Record<string, string | boolean>): number {
 
   const result = runCheck({
     root, base,
+    ...(args["head"] !== undefined ? { head: git(["rev-parse", String(args["head"])], root) } : {}),
     ...(args["coverage"] !== undefined ? { lcovPath: String(args["coverage"]) } : {}),
   });
 

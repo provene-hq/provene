@@ -56,6 +56,7 @@ export function loadReceipts(root: string): Array<{ file: string; statement: Sta
 export function runCheck(opts: {
   root: string;
   base: string;
+  head?: string;
   lcovPath?: string;
 }): CheckResult {
   const receipts = loadReceipts(opts.root).map(({ file, statement }) => {
@@ -63,7 +64,7 @@ export function runCheck(opts: {
     return { file, tier: r.tier, ok: r.ok, problems: r.problems };
   });
 
-  const changed = changedLines(opts.base, opts.root);
+  const changed = changedLines(opts.base, opts.head ?? "HEAD", opts.root);
   const changedPaths = [...changed.keys()].filter((p) => !p.startsWith(".provene/")).sort();
 
   // Which changed paths does any receipt claim the agent touched?

@@ -8,9 +8,18 @@
  */
 import { execFileSync } from "node:child_process";
 
-/** path -> set of line numbers the diff added or modified. */
-export function changedLines(base: string, cwd?: string): Map<string, Set<number>> {
-  const raw = execFileSync("git", ["diff", "-U0", "--no-color", "--no-ext-diff", base], {
+/**
+ * path -> set of line numbers the diff added or modified.
+ *
+ * `head` defaults to the committed state rather than the working tree. The unit
+ * of review for a pull request is what was committed; in CI the working tree
+ * also contains whatever the build did to it, so diffing against it reports
+ * build output as part of the author's change. Observed on this repository's
+ * own first pull request, where `npm install` rewrote a tracked
+ * package-lock.json and `check` counted it as a changed path.
+ */
+export function changedLines(base: string, head = "HEAD", cwd?: string): Map<string, Set<number>> {
+  const raw = execFileSync("git", ["diff", "-U0", "--no-color", "--no-ext-diff", base, head], {
     encoding: "utf8", cwd: cwd ?? process.cwd(), maxBuffer: 64 * 1024 * 1024,
   });
   const out = new Map<string, Set<number>>();
