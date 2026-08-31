@@ -806,11 +806,79 @@ function usage(): void {
   out("  provene doctor [--settings <path>]                     check the local setup");
 }
 
+
+/**
+ * The flags each command understands.
+ *
+ * `parse` accepts any `--word`, and every command reads only the keys it knows,
+ * so anything else was silently discarded. `provene init --agent gemini` on a
+ * build that predates `--agent` therefore installed CLAUDE hooks, into Claude's
+ * settings file, and said so in an output the user had just asked not to get.
+ * A typo does the same thing on a current build: `--agnet gemini` still
+ * installs Claude.
+ *
+ * That is the failure this project keeps finding in itself -- a request the
+ * tool cannot honour, quietly reinterpreted as one it can. A stale binary
+ * cannot be fixed from here, but it stops being silent from this version on,
+ * and `--version` is the first thing the error tells you to check.
+ */
+const FLAGS: Readonly<Record<string, readonly string[]>> = {
+  init: ["agent", "settings", "dry-run"],
+  doctor: ["agent", "settings"],
+  record: ["stdin", "agent", "session", "kind", "path", "argv", "exit", "duration-ms"],
+  emit: ["stdin", "agent", "quiet", "session", "base", "subject", "task",
+         "tool", "vendor", "tool-version", "model", "model-source"],
+  verify: ["against", "base", "head"],
+  check: ["base", "head", "coverage", "exclude", "annotate", "format"],
+  promote: ["base", "head", "attester", "issuer", "coverage", "out", "manifest",
+            "public", "pull-request", "run-url", "target-ref", "test-result", "test-tool"],
+  manifest: ["base", "head", "out"],
+  "verify-aggregate": ["base", "head", "repo", "bundle", "cert-identity", "signer-workflow"],
+};
+
+/** Edit distance, capped: enough to say "did you mean" without a dependency. */
+function near(a: string, b: string): number {
+  const rows = Array.from({ length: a.length + 1 }, (_, i) => [i, ...Array(b.length).fill(0)]);
+  for (let j = 0; j <= b.length; j++) rows[0]![j] = j;
+  for (let i = 1; i <= a.length; i++) {
+    for (let j = 1; j <= b.length; j++) {
+      rows[i]![j] = Math.min(
+        rows[i - 1]![j]! + 1, rows[i]![j - 1]! + 1,
+        rows[i - 1]![j - 1]! + (a[i - 1] === b[j - 1] ? 0 : 1),
+      );
+    }
+  }
+  return rows[a.length]![b.length]!;
+}
+
+function rejectUnknownFlags(command: string, args: Record<string, string | boolean>): boolean {
+  const accepted = FLAGS[command];
+  if (accepted === undefined) return true;
+  // Positionals are stored as _0, _1 and are not flags.
+  const given = Object.keys(args).filter((k) => !/^_\d+$/.test(k));
+  const unknown = given.filter((k) => !accepted.includes(k));
+  if (unknown.length === 0) return true;
+
+  for (const flag of unknown) {
+    const suggestion = accepted.find((a) => near(a, flag) <= 2);
+    out(`provene ${command}: unknown option --${flag}` +
+        (suggestion !== undefined ? `, did you mean --${suggestion}?` : ""));
+  }
+  out(`  ${command} accepts: ${accepted.map((a) => `--${a}`).join(", ")}`);
+  out("  If you expected this option to exist, check `provene --version`;");
+  out("  an older build ignores options it does not know instead of saying so.");
+  return false;
+}
+
 // Entry point: dispatch on the subcommand, exit with its status so hooks and CI
 // can branch on the code rather than parse the output.
 const [, , command, ...rest] = process.argv;
 const args = parse(rest);
 let code = 0;
+// Before anything runs: a flag we do not understand must never be discarded.
+if (command !== undefined && FLAGS[command] !== undefined && !rejectUnknownFlags(command, args)) {
+  process.exit(2);
+}
 switch (command) {
   case "emit": code = cmdEmit(args); break;
   case "verify": code = cmdVerify(args); break;

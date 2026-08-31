@@ -1,0 +1,153 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "s@main",
+      "digest": {
+        "sha256": "f41f20bc8b27492fa9d6e34e08dff66bc14b287598bd8c602922b017e2eaa027"
+      }
+    }
+  ],
+  "predicateType": "https://provene.dev/attestation/code-change/v0.1",
+  "predicate": {
+    "provene": "0.1",
+    "attestation": {
+      "tier": "T0",
+      "trustRoot": {
+        "kind": "none"
+      },
+      "transparencyLog": {
+        "published": false
+      }
+    },
+    "agent": {
+      "tool": "t",
+      "vendor": "v",
+      "toolVersion": "1",
+      "model": "m",
+      "modelSource": "reported"
+    },
+    "emitter": {
+      "name": "provene",
+      "version": "0.5.0"
+    },
+    "task": {
+      "ref": "u",
+      "digest": "hmac-sha256:19792b91bcecc61ffc11411b2495a89722e6802cca35d3a892aecce8f728439c",
+      "digestScope": "repo",
+      "keySource": "root-commit"
+    },
+    "session": {
+      "id": "s",
+      "startedAt": "2026-08-31T07:32:34.751Z",
+      "endedAt": "2026-08-31T07:33:19.497Z",
+      "toolCalls": 2
+    },
+    "binding": {
+      "changeDigest": "f41f20bc8b27492fa9d6e34e08dff66bc14b287598bd8c602922b017e2eaa027",
+      "algorithm": "provene-changeset-v1",
+      "parent": "2c5fd90652e233655dbd02d555fed6bf63deacab",
+      "excluded": [
+        ".provene/"
+      ]
+    },
+    "changes": {
+      "granularity": "file",
+      "files": [
+        {
+          "path": "packages/cli/src/cli.ts",
+          "status": "M",
+          "preBlob": "a798d557f56592d2b348cd25c436f0676537632e",
+          "postBlob": "4c71f78ee0f2c380af1a4cd63ed129b460decf11",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/test/claims.test.ts",
+          "status": "M",
+          "preBlob": "ad72e004b20fe6037a4b878e49c1ea796886f567",
+          "postBlob": "8d2fe6cea02b5feb6e26a4e0add86c49422b4f77",
+          "verifiedBy": []
+        },
+        {
+          "path": "m",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+          "verifiedBy": []
+        },
+        {
+          "path": "o.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "831bd227b819c4cedc62dc2286400e9ff783f685",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/m",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/o.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "831bd227b819c4cedc62dc2286400e9ff783f685",
+          "verifiedBy": []
+        }
+      ]
+    },
+    "commands": [
+      {
+        "argv0": "npm",
+        "shape": "npm test",
+        "argvDigest": "hmac-sha256:b84a3cf7c556d3362d8aa618500bf302ae612ab6d6426fed336dea75e6f59233",
+        "exitCode": 0,
+        "durationMs": 1,
+        "observedBy": "local"
+      },
+      {
+        "argv0": "npm",
+        "shape": "npm test",
+        "argvDigest": "hmac-sha256:b84a3cf7c556d3362d8aa618500bf302ae612ab6d6426fed336dea75e6f59233",
+        "exitCode": 0,
+        "durationMs": 1,
+        "observedBy": "local"
+      }
+    ],
+    "verification": {
+      "runs": [
+        {
+          "id": "local-0",
+          "kind": "test",
+          "tool": "npm",
+          "result": "PASSED",
+          "observedBy": "local"
+        },
+        {
+          "id": "local-1",
+          "kind": "test",
+          "tool": "npm",
+          "result": "PASSED",
+          "observedBy": "local"
+        }
+      ],
+      "unverifiedPaths": [
+        "packages/cli/src/cli.ts",
+        "packages/cli/test/claims.test.ts",
+        "m",
+        "o.json",
+        "packages/cli/m",
+        "packages/cli/o.json"
+      ]
+    },
+    "humanReview": {
+      "observed": false
+    },
+    "redaction": {
+      "pathsExcluded": false,
+      "allowlistId": "provene-default-v1"
+    }
+  }
+}

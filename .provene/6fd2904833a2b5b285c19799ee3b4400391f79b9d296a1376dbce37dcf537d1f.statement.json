@@ -1,0 +1,105 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "s@main",
+      "digest": {
+        "sha256": "6fd2904833a2b5b285c19799ee3b4400391f79b9d296a1376dbce37dcf537d1f"
+      }
+    }
+  ],
+  "predicateType": "https://provene.dev/attestation/code-change/v0.1",
+  "predicate": {
+    "provene": "0.1",
+    "attestation": {
+      "tier": "T0",
+      "trustRoot": {
+        "kind": "none"
+      },
+      "transparencyLog": {
+        "published": false
+      }
+    },
+    "agent": {
+      "tool": "t",
+      "vendor": "v",
+      "toolVersion": "1",
+      "model": "m",
+      "modelSource": "reported"
+    },
+    "emitter": {
+      "name": "provene",
+      "version": "0.5.0"
+    },
+    "task": {
+      "ref": "u",
+      "digest": "hmac-sha256:19792b91bcecc61ffc11411b2495a89722e6802cca35d3a892aecce8f728439c",
+      "digestScope": "repo",
+      "keySource": "root-commit"
+    },
+    "session": {
+      "id": "s",
+      "startedAt": "2026-08-31T07:32:34.524Z",
+      "endedAt": "2026-08-31T07:32:34.524Z",
+      "toolCalls": 0
+    },
+    "binding": {
+      "changeDigest": "6fd2904833a2b5b285c19799ee3b4400391f79b9d296a1376dbce37dcf537d1f",
+      "algorithm": "provene-changeset-v1",
+      "parent": "2c5fd90652e233655dbd02d555fed6bf63deacab",
+      "excluded": [
+        ".provene/"
+      ]
+    },
+    "changes": {
+      "granularity": "file",
+      "files": [
+        {
+          "path": "packages/cli/src/cli.ts",
+          "status": "M",
+          "preBlob": "a798d557f56592d2b348cd25c436f0676537632e",
+          "postBlob": "4c71f78ee0f2c380af1a4cd63ed129b460decf11",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/test/claims.test.ts",
+          "status": "M",
+          "preBlob": "ad72e004b20fe6037a4b878e49c1ea796886f567",
+          "postBlob": "8d2fe6cea02b5feb6e26a4e0add86c49422b4f77",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/m",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "e69de29bb2d1d6434b8b29ae775ad8c2e48c5391",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/o.json",
+          "status": "A",
+          "preBlob": "-",
+          "postBlob": "831bd227b819c4cedc62dc2286400e9ff783f685",
+          "verifiedBy": []
+        }
+      ]
+    },
+    "commands": [],
+    "verification": {
+      "runs": [],
+      "unverifiedPaths": [
+        "packages/cli/src/cli.ts",
+        "packages/cli/test/claims.test.ts",
+        "packages/cli/m",
+        "packages/cli/o.json"
+      ]
+    },
+    "humanReview": {
+      "observed": false
+    },
+    "redaction": {
+      "pathsExcluded": false,
+      "allowlistId": "provene-default-v1"
+    }
+  }
+}

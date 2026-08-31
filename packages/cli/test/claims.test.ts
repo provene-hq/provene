@@ -225,3 +225,53 @@ test("init warns about the two things that make it look broken", () => {
     assert.match(r.stdout, /git commit -am/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("an option the tool does not understand is never silently discarded", () => {
+  // Found in the wild: `provene init --agent gemini` on a build predating
+  // --agent installed CLAUDE hooks into Claude's settings file and reported
+  // success. The parser accepts any --word and each command reads only the keys
+  // it knows, so a request the tool could not honour became one it could.
+  const cases: Array<[string[], RegExp]> = [
+    [["init", "--agnet", "gemini"], /unknown option --agnet, did you mean --agent\?/],
+    [["init", "--agent-vendor", "google"], /unknown option --agent-vendor/],
+    [["emit", "--sesion", "x"], /did you mean --session\?/],
+    [["check", "--covrage", "l.info"], /did you mean --coverage\?/],
+    [["promote", "--totally-made-up"], /unknown option --totally-made-up/],
+    [["verify-aggregate", "--repo", "o/n", "--signer_workflow", "x"], /unknown option --signer_workflow/],
+  ];
+  for (const [argv, expected] of cases) {
+    const r = spawnSync(process.execPath, [CLI, ...argv], { encoding: "utf8" });
+    assert.equal(r.status, 2, `${argv.join(" ")} exited ${r.status}`);
+    assert.match(r.stdout, expected);
+    assert.match(r.stdout, /check `provene --version`/);
+    assert.equal(r.stderr, "");
+  }
+});
+
+test("every flag the action and the docs actually pass is accepted", () => {
+  // The rejection above is only safe if the accepted list is complete. These
+  // are the invocations action.yml and both READMEs tell people to run; a flag
+  // missing from the table would turn a working command into an error.
+  const known: Array<string[]> = [
+    ["check", "--base", "HEAD", "--head", "HEAD", "--coverage", "l.info",
+     "--exclude", "a,b", "--annotate", "github", "--format", "json"],
+    ["promote", "--base", "HEAD", "--head", "HEAD", "--attester", "x", "--issuer", "y",
+     "--coverage", "l.info", "--out", "o.json", "--manifest", "m", "--public",
+     "--pull-request", "u", "--run-url", "u", "--target-ref", "r",
+     "--test-result", "PASSED", "--test-tool", "vitest"],
+    ["manifest", "--base", "HEAD", "--head", "HEAD", "--out", "m"],
+    ["verify-aggregate", "--repo", "o/n", "--base", "HEAD", "--head", "HEAD",
+     "--bundle", "b.json", "--cert-identity", "i", "--signer-workflow", "w"],
+    ["emit", "--session", "s", "--base", "HEAD", "--tool", "t", "--vendor", "v",
+     "--tool-version", "1", "--model", "m", "--model-source", "reported",
+     "--subject", "s@main", "--task", "u", "--quiet"],
+    ["record", "--session", "s", "--kind", "command", "--argv", "npm test",
+     "--exit", "0", "--duration-ms", "1", "--agent", "gemini"],
+    ["init", "--agent", "gemini", "--settings", "s.json", "--dry-run"],
+    ["doctor", "--agent", "gemini", "--settings", "s.json"],
+  ];
+  for (const argv of known) {
+    const r = spawnSync(process.execPath, [CLI, ...argv], { encoding: "utf8" });
+    assert.doesNotMatch(r.stdout, /unknown option/, `${argv[0]}: ${r.stdout}`);
+  }
+});

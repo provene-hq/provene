@@ -1,0 +1,56 @@
+{
+  "provene": "0.1",
+  "attestation": {
+    "tier": "T2",
+    "attester": {
+      "identity": "x",
+      "issuer": "y"
+    },
+    "trustRoot": {
+      "kind": "sigstore-github"
+    },
+    "transparencyLog": {
+      "published": true
+    }
+  },
+  "emitter": {
+    "name": "provene",
+    "version": "0.5.0"
+  },
+  "merge": {
+    "kind": "pull-request",
+    "pullRequest": "u",
+    "targetRef": "r"
+  },
+  "binding": {
+    "changeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+    "algorithm": "provene-changeset-v1",
+    "parent": "2c5fd90652e233655dbd02d555fed6bf63deacab",
+    "excluded": [
+      ".provene/**"
+    ]
+  },
+  "constituents": [],
+  "coverage": {
+    "complete": false,
+    "constituentsFound": 0,
+    "commitsInRange": 0
+  },
+  "verification": {
+    "runs": [
+      {
+        "id": "ci-test",
+        "kind": "test",
+        "tool": "vitest",
+        "result": "PASSED",
+        "url": "u",
+        "baseCommit": "2c5fd90652e233655dbd02d555fed6bf63deacab",
+        "observedBy": "ci"
+      }
+    ],
+    "unverifiedPaths": []
+  },
+  "humanReview": {
+    "observed": false
+  }
+}
