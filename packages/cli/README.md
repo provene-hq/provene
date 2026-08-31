@@ -35,6 +35,7 @@ It names the agent. It records the model only if something told the CLI what it 
 | `provene manifest` | the exact bytes the change digest is taken over |
 | `provene verify-aggregate` | verify a signed aggregate against this checkout |
 | `provene record` | append to the session journal. Called by the hooks, not by you |
+| `provene import` | read a session from an agent's own transcript, for an agent that fires no hooks. Antigravity is the one that needs it |
 
 `provene check` is the one worth running by hand:
 

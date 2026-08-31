@@ -113,12 +113,14 @@ Two agents have their hooks written for them. The format was never specific to e
 Any other agent integrates through two commands and no fork:
 
 ```sh
-provene record --session s1 --kind edit    --path src/auth.ts
-provene record --session s1 --kind command --argv "npm test" --exit 0
+provene record --session s1 --kind edit    --path src/auth.ts --cwd "$PWD"
+provene record --session s1 --kind command --argv "npm test" --exit 0 --cwd "$PWD"
 provene emit   --session s1 --base <commit-before> --tool gemini-cli --vendor google
 ```
 
-That produces the same receipt the hooks produce, including verification runs — the exit code is what makes a command into evidence. [`spec/emitters.md`](spec/emitters.md) is the contract: what to report, what never to record, and the one rule that matters most, which is not to guess. An emitter that infers a model from a version string makes `modelSource` worthless for everyone.
+That produces the same receipt the hooks produce, including verification runs — the exit code is what makes a command into evidence.
+
+`--cwd` is what makes the exit code count. A journal belongs to a session, not a repository, and a session may work in more than one; a command whose directory was never recorded is written down as having run and carries no exit code, so it produces no verification run. Omit it and the evidence quietly disappears, which is the intended outcome: the alternative is a receipt asserting that a suite which passed in another checkout passed on this change. [`spec/emitters.md`](spec/emitters.md) is the contract: what to report, what never to record, and the one rule that matters most, which is not to guess. An emitter that infers a model from a version string makes `modelSource` worthless for everyone.
 
 Gemini CLI was worth wiring properly rather than treating as "Claude with different names", because almost nothing about it matches: it has no tool-failure event, so an outcome comes from `tool_response.error`; its hook timeouts are milliseconds where Claude's are seconds; and a hook may not print to stdout at all, which makes `emit` announcing where it wrote the receipt a protocol violation rather than a courtesy. Each of those is a silent failure if assumed. [`spec/emitters.md`](spec/emitters.md) has the comparison.
 
