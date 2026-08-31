@@ -183,7 +183,14 @@ Regenerate that manifest; never verify one you were sent. Verifying a supplied f
 
 Pre-alpha. The format is specified and has a conformance suite. The CLI emits, verifies, promotes and checks. The action runs the whole path and asks GitHub to sign the result.
 
-That last step is the one to be careful about. The signing path is built, reviewed and exercised against a stub, and it has never produced a signature against GitHub's real attestation store, because a private repository on a free plan cannot store one. Everything above T0 is therefore correct by construction and unproven in practice. Treat a T2 claim in this README as a description of what the code does, not as a report of something that has happened.
+The signing path has now been run for real. Pull request #2 produced a signed T2 aggregate in GitHub's attestation store on 31 August 2026, and `provene verify-aggregate` confirmed it against a local checkout, pinned to the signing workflow:
+
+```console
+provene: verified T2 aggregate · sha256:2b3229b7027d · provene-hq/provene
+  signer https://github.com/provene-hq/provene/.github/workflows/provene.yml@refs/pull/2/merge
+```
+
+That run also found a defect five rounds of review had not: the aggregate counted the pull-request merge commit GitHub creates, which exists in no checkout, so it claimed one more commit than any verifier could find. Fixed, and the thing worth taking from it is that a signing path can be reviewed to exhaustion and still be wrong in a way only running it reveals.
 
 The policy engine in [RFC 0002](spec/rfc/0002-policy-grammar.md) is specified with 38 conformance checks and no implementation, on purpose: writing the evaluator first is how a specification quietly becomes "whatever the code does". Attribution is file-level; the format describes content-anchored spans and no emitter produces them yet.
 

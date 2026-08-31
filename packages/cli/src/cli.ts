@@ -416,7 +416,10 @@ function cmdVerifyAggregate(args: Record<string, string | boolean>): number {
   });
 
   const commits = (() => {
-    try { return git(["rev-list", `${base}..${range.head}`], root).split("\n").filter((l) => l !== "").length; }
+    // --no-merges, matching what `promote` counted. Without it the verifier and
+    // the signer disagree by exactly the pull-request merge commit, which CI
+    // has and no checkout does.
+    try { return git(["rev-list", "--no-merges", `${base}..${range.head}`], root).split("\n").filter((l) => l !== "").length; }
     catch { return undefined; }
   })();
 

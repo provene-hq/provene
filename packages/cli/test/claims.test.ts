@@ -108,3 +108,46 @@ test("with no coverage report, every changed path is unverified", () => {
     assert.equal(r.predicate!["verification"].runs[0].result, "PASSED");
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("a merge commit CI generated is not counted against coverage", () => {
+  // Found by the first real signature this project produced, not by review.
+  // CI is handed refs/pull/N/merge, a commit that exists in nobody's checkout,
+  // so counting it made the signed aggregate claim one more commit than any
+  // verifier could find: "signed over 2 commit(s); this range has 1", on a
+  // branch holding exactly one commit. It would have fired on every
+  // verification forever.
+  const dir = mkdtempSync(join(tmpdir(), "provene-merge-"));
+  const git = (...a: string[]): string =>
+    execFileSync("git", a, { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  try {
+    git("init", "-q", ".");
+    git("config", "user.email", "a@b.c"); git("config", "user.name", "t");
+    writeFileSync(join(dir, "a.ts"), "export const a = 1;\n");
+    git("add", "-A"); git("commit", "-qm", "base");
+    const main = git("rev-parse", "--abbrev-ref", "HEAD");
+
+    git("checkout", "-qb", "feature");
+    writeFileSync(join(dir, "b.ts"), "export const b = 2;\n");
+    git("add", "-A"); git("commit", "-qm", "the author's one commit");
+
+    git("checkout", "-q", main);
+    writeFileSync(join(dir, "c.ts"), "export const c = 3;\n");
+    git("add", "-A"); git("commit", "-qm", "main moved on");
+    const baseTip = git("rev-parse", "HEAD");
+
+    // What actions/checkout hands a pull_request job.
+    git("checkout", "-qb", "pr-merge", baseTip);
+    git("merge", "-q", "--no-ff", "--no-edit", "feature");
+    const mergeCommit = git("rev-parse", "HEAD");
+
+    const out = join(dir, "agg.json");
+    execFileSync(process.execPath,
+      [CLI, "promote", "--base", baseTip, "--head", mergeCommit, "--attester", "ci", "--out", out],
+      { cwd: dir, encoding: "utf8", stdio: ["ignore", "pipe", "pipe"] });
+    const predicate = JSON.parse(readFileSync(out, "utf8")) as Record<string, any>;
+
+    // One commit: the one a person wrote. Not two.
+    assert.equal(predicate["coverage"].commitsInRange, 1,
+      "the pull-request merge commit must not be counted");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

@@ -41,10 +41,23 @@ export interface PromoteInput {
 
 const sha256 = (s: string): string => createHash("sha256").update(s, "utf8").digest("hex");
 
-/** Commits in base..head, so coverage can state how much of the range carries receipts. */
+/**
+ * Commits in the range that a receipt could possibly cover.
+ *
+ * `--no-merges` is load-bearing, not tidiness. On a pull request CI is handed
+ * `refs/pull/N/merge`, a commit GitHub created that is in nobody's checkout, so
+ * counting it made the signed aggregate claim one more commit than any verifier
+ * could ever find. The first real signature this project produced reported
+ * "signed over 2 commit(s); this range has 1" against a branch holding exactly
+ * one commit -- a note that would have fired on every verification forever.
+ *
+ * It is also the right denominator on its own terms: a merge commit CI
+ * generated cannot carry a receipt, so counting it toward coverage guarantees
+ * coverage can never be complete.
+ */
 function commitsInRange(root: string, base: string, head: string): string[] {
   try {
-    return execFileSync("git", ["rev-list", `${base}..${head}`], {
+    return execFileSync("git", ["rev-list", "--no-merges", `${base}..${head}`], {
       encoding: "utf8", cwd: root, maxBuffer: 32 * 1024 * 1024,
     }).split("\n").filter((l) => l !== "");
   } catch {
