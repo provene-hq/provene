@@ -44,6 +44,13 @@ inputs:
       Signing is what makes any tier claim above T0 mean anything: everything
       the local hook produces is a self-attestation by the party who wants the
       merge.
+
+      PLATFORM REQUIREMENT: GitHub's attestation store is available to public
+      repositories on any plan, and to private repositories only on paid plans.
+      A private repository on the free plan fails with "Feature not available
+      for the organization". That failure is deliberately loud -- believing you
+      have a signed T2 receipt when nothing was signed is worse than a red
+      check -- so set sign: false where the platform cannot store it.
     required: false
     default: "false"
   fail-on-invalid-receipt:

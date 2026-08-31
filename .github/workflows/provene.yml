@@ -58,6 +58,11 @@ jobs:
         uses: ./
         with:
           coverage: packages/cli/coverage/lcov.info
-          # The repository signs its own pull requests. Every visitor sees a
+          # The repository signs its own pull requests, so every visitor sees a
           # real T2 attestation before reading a line of the README.
-          sign: "true"
+          #
+          # Conditional on visibility because GitHub's attestation store is
+          # free for public repositories and a paid feature for private ones.
+          # Asking for signing where the platform will refuse it turns every
+          # pull request red for a reason that has nothing to do with the code.
+          sign: ${{ !github.event.repository.private }}

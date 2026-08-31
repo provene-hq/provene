@@ -6,7 +6,9 @@ Portable, cryptographically signed evidence receipts for AI-generated code chang
 
 When a coding agent finishes a session, this CLI records what happened — which agent and model, from what task, which files changed, which commands ran, which tests executed and what they returned — as a signed artifact attached to the commit.
 
-**Pre-alpha.** `init`, `record`, `emit`, `verify` and `doctor` work. Signing, CI promotion, the GitHub Action and the policy engine are not built yet.
+**Pre-alpha.** `init`, `record`, `emit`, `verify`, `check`, `promote` and `doctor` work. The GitHub Action verifies receipts, annotates changed lines with no test behind them, and signs a T2 aggregate.
+
+Signing uses GitHub's attestation store, which is free for public repositories and a paid feature for private ones. Signing, CI promotion, the GitHub Action and the policy engine are not built yet.
 
 ```sh
 npm i -g proveneio
