@@ -1,14 +1,16 @@
 #!/usr/bin/env node
 /** provene — portable, signed evidence receipts for AI-generated code changes. */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, existsSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
+import { tmpdir } from "node:os";
 import { diffEntries, repoRoot, headCommit, rootCommit, git } from "./git.ts";
 import { append, read, journalDir, recordError, markEmitted, orphanedSessions, journalInsideRepo } from "./journal.ts";
 import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID, TEST_SHAPES } from "./redact.ts";
 import { buildT0, canonicalJson, checkStatement, receiptFileName, type Statement } from "./receipt.ts";
-import { changeDigest } from "./changedigest.ts";
+import { changeDigest, canonicalPayload } from "./changedigest.ts";
 import { runCheck, annotations, summary } from "./check.ts";
 import { buildAggregate, AGGREGATE_PREDICATE_TYPE } from "./promote.ts";
+import { writeManifest, ghVerify, checkAggregate } from "./attestation.ts";
 import { readStdin, parsePayload, toJournalEntries } from "./hookinput.ts";
 import {
   userSettingsPath, readSettings, withProveneHooks, writeSettings,
@@ -237,6 +239,8 @@ function cmdPromote(args: Record<string, string | boolean>): number {
       }]
     : [];
 
+  const outPath = args["out"] !== undefined ? String(args["out"]) : undefined;
+
   const { predicate, subjectDigest } = buildAggregate({
     root, base, head,
     emitterVersion: VERSION,
@@ -254,13 +258,22 @@ function cmdPromote(args: Record<string, string | boolean>): number {
     runs, unverifiedPaths: unverified,
   });
 
-  const outPath = args["out"] !== undefined ? String(args["out"]) : undefined;
+  // The canonical pre-image of the change digest, written as a file so that
+  // stock Sigstore tooling can address the attestation at all: `gh attestation
+  // verify` takes an artefact and hashes it, and our subject is a change set
+  // rather than any file in the tree. sha256(manifest) IS the subject digest.
+  const manifestPath = args["manifest"] !== undefined
+    ? String(args["manifest"])
+    : outPath !== undefined ? `${outPath}.changeset` : undefined;
+  if (manifestPath !== undefined) writeManifest(manifestPath, diffEntries(base, root));
+
   const body = JSON.stringify(predicate, null, 2) + "\n";
   if (outPath !== undefined) {
     writeFileSync(outPath, body, "utf8");
     out(`provene: wrote aggregate predicate to ${outPath}`);
     out(`  predicate-type ${AGGREGATE_PREDICATE_TYPE}`);
     out(`  subject-digest sha256:${subjectDigest}`);
+    if (manifestPath !== undefined) out(`  changeset manifest ${manifestPath} (sha256 = the subject digest)`);
     const c = (predicate as any).coverage;
     out(`  ${c.constituentsFound} constituent receipt(s) over ${c.commitsInRange} commit(s)` +
         `${c.complete ? "" : " — coverage incomplete, recorded as such"}`);
@@ -268,13 +281,118 @@ function cmdPromote(args: Record<string, string | boolean>): number {
     const ghOut = process.env["GITHUB_OUTPUT"];
     if (ghOut !== undefined) {
       writeFileSync(ghOut,
-        `predicate-type=${AGGREGATE_PREDICATE_TYPE}\nsubject-digest=sha256:${subjectDigest}\npredicate-path=${outPath}\n`,
+        `predicate-type=${AGGREGATE_PREDICATE_TYPE}\nsubject-digest=sha256:${subjectDigest}\n` +
+        `predicate-path=${outPath}\nmanifest-path=${manifestPath ?? ""}\n`,
         { flag: "a" });
     }
   } else {
     process.stdout.write(body);
   }
   return 0;
+}
+
+function cmdManifest(args: Record<string, string | boolean>): number {
+  let root: string;
+  try { root = repoRoot(); } catch { out("provene manifest: not inside a git repository"); return 2; }
+  const base = git(["rev-parse", String(args["base"] ?? "HEAD")], root);
+  const entries = diffEntries(base, root);
+  const digest = changeDigest(entries);
+  const outPath = args["out"] !== undefined ? String(args["out"]) : undefined;
+  if (outPath === undefined) {
+    // No trailing newline on stdout either: the bytes are the point.
+    process.stdout.write(canonicalPayload(entries));
+    return 0;
+  }
+  writeManifest(outPath, entries);
+  out(`provene: wrote ${outPath}`);
+  out(`  sha256 ${digest}`);
+  out("  this is the change digest — the same bytes any checkout of this range reproduces");
+  return 0;
+}
+
+/**
+ * Verify the signed T2 aggregate covering a range.
+ *
+ * Provene does not check signatures. `gh attestation verify` does, and its exit
+ * code is the trust boundary; what happens here afterwards is the half gh
+ * cannot do — deciding whether the thing that was signed is the work in front
+ * of you.
+ */
+function cmdVerifyAggregate(args: Record<string, string | boolean>): number {
+  let root: string;
+  try { root = repoRoot(); } catch { out("provene verify-aggregate: not inside a git repository"); return 2; }
+
+  const repo = String(args["repo"] ?? process.env["GITHUB_REPOSITORY"] ?? "");
+  if (repo === "") {
+    out("provene verify-aggregate: --repo <owner/name> is required");
+    out("  the attestation lives in that repository's store, not in the working tree");
+    return 2;
+  }
+
+  let base: string;
+  try { base = git(["rev-parse", String(args["base"] ?? "HEAD")], root); }
+  catch { out(`provene verify-aggregate: cannot resolve ${String(args["base"] ?? "HEAD")}`); return 2; }
+
+  const entries = diffEntries(base, root);
+  const subjectDigest = changeDigest(entries);
+  const manifestPath = join(mkdtempSync(join(tmpdir(), "provene-")), "changeset");
+  writeManifest(manifestPath, entries);
+
+  const gh = ghVerify({
+    manifestPath, repo,
+    predicateType: AGGREGATE_PREDICATE_TYPE,
+    ...(args["bundle"] !== undefined ? { bundlePath: String(args["bundle"]) } : {}),
+    ...(args["cert-identity"] !== undefined ? { certIdentity: String(args["cert-identity"]) } : {}),
+    ...(args["signer-workflow"] !== undefined ? { signerWorkflow: String(args["signer-workflow"]) } : {}),
+    cwd: root,
+  });
+
+  if (!gh.verified) {
+    // Three outcomes, not two. "Could not check" is not "failed", and neither
+    // is "passed"; reporting the first as either is how a verification tool
+    // starts lying.
+    if (!gh.ran) {
+      out("provene: could not verify — no verifier available");
+      out(`  ${gh.message}`);
+      return 3;
+    }
+    out("provene: the signature did not verify");
+    for (const line of gh.message.split("\n")) if (line.trim() !== "") out(`  ${line.trim()}`);
+    out(`  change digest here: sha256:${subjectDigest}`);
+    return 1;
+  }
+
+  if (gh.statements.length === 0) {
+    // gh said yes. We simply could not read the detail back, which costs us the
+    // binding check but must not be reported as a pass of it.
+    out(`provene: signature verified by gh for sha256:${subjectDigest}`);
+    out("  gh returned no statement this version could parse, so the predicate's own");
+    out("  claims were NOT checked. The signature does cover this change set.");
+    return 0;
+  }
+
+  const commits = (() => {
+    try { return git(["rev-list", `${base}..HEAD`], root).split("\n").filter((l) => l !== "").length; }
+    catch { return undefined; }
+  })();
+
+  let failed = false;
+  for (const statement of gh.statements) {
+    const r = checkAggregate(statement, {
+      subjectDigest, base,
+      ...(commits !== undefined ? { commitsInRange: commits } : {}),
+    });
+    if (r.ok) {
+      out(`provene: verified ${r.tier} aggregate · sha256:${subjectDigest.slice(0, 12)} · ${repo}`);
+      for (const id of gh.identities) out(`  signer ${id}`);
+      for (const n of r.notes) out(`  note: ${n}`);
+    } else {
+      failed = true;
+      out("provene: the signature is valid, but what it signed is not this change");
+      for (const p of r.problems) out(`  - ${p}`);
+    }
+  }
+  return failed ? 1 : 0;
 }
 
 function cmdDoctor(): number {
@@ -471,6 +589,8 @@ switch (command) {
   case "verify": code = cmdVerify(args); break;
   case "check": code = cmdCheck(args); break;
   case "promote": code = cmdPromote(args); break;
+  case "manifest": code = cmdManifest(args); break;
+  case "verify-aggregate": code = cmdVerifyAggregate(args); break;
   case "doctor": code = cmdDoctor(); break;
   case "record": code = cmdRecord(args); break;
   case "init": code = cmdInit(args); break;
@@ -483,6 +603,8 @@ switch (command) {
     out("  provene verify <receipt> [--against <commit>]          check integrity, report tier");
     out("  provene check  --base <ref> [--coverage <lcov.info>]   what a reviewer needs to look at");
     out("  provene promote --base <ref> --attester <id> --out <f>  build the T2 aggregate for CI to sign");
+    out("  provene manifest --base <ref> [--out <f>]              the bytes the change digest is taken over");
+    out("  provene verify-aggregate --repo <owner/name> --base <ref>  verify the signed T2 aggregate");
     out("  provene doctor                                         check the local setup");
     code = command === undefined ? 0 : 2;
 }

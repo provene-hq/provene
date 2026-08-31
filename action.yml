@@ -185,14 +185,24 @@ runs:
     - name: Record where the signed receipt went
       if: inputs.sign == 'true'
       shell: bash
+      env:
+        PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
       run: |
         {
           echo
           echo "**Signed T2 aggregate:** [${{ steps.attest.outputs.attestation-id }}](${{ steps.attest.outputs.attestation-url }})"
           echo
-          echo "Verify with:"
+          echo "Verify it from a checkout of \`${{ github.sha }}\`:"
           echo '```'
-          echo "gh attestation verify --repo ${{ github.repository }} --predicate-type ${{ steps.promote.outputs.predicate-type }} <artifact>"
+          echo "provene verify-aggregate --repo ${{ github.repository }} --base ${PROVENE_BASE}"
+          echo '```'
+          echo "That recomputes the change set locally and hands it to \`gh attestation verify\`;"
+          echo "the signature is checked by gh, and provene checks that what was signed is"
+          echo "the work in front of you. With stock tooling only:"
+          echo '```'
+          echo "provene manifest --base ${PROVENE_BASE} --out changeset"
+          echo "gh attestation verify changeset --repo ${{ github.repository }} \\"
+          echo "  --predicate-type ${{ steps.promote.outputs.predicate-type }}"
           echo '```'
         } >> "$GITHUB_STEP_SUMMARY"
         echo "provene: signed T2 aggregate ${{ steps.attest.outputs.attestation-id }}"

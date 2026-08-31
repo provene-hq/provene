@@ -6,9 +6,9 @@ Portable, cryptographically signed evidence receipts for AI-generated code chang
 
 When a coding agent finishes a session, this CLI records what happened — which agent and model, from what task, which files changed, which commands ran, which tests executed and what they returned — as a signed artifact attached to the commit.
 
-**Pre-alpha.** `init`, `record`, `emit`, `verify`, `check`, `promote` and `doctor` work. The GitHub Action verifies receipts, annotates changed lines with no test behind them, and signs a T2 aggregate.
+**Pre-alpha.** `init`, `record`, `emit`, `verify`, `check`, `promote`, `manifest`, `verify-aggregate` and `doctor` work. The GitHub Action verifies receipts, annotates changed lines with no test behind them, builds a T2 aggregate and signs it.
 
-Signing uses GitHub's attestation store, which is free for public repositories and a paid feature for private ones. Signing, CI promotion, the GitHub Action and the policy engine are not built yet.
+Signing uses GitHub's attestation store, which is free for public repositories and a paid feature for private ones. The policy engine specified in RFC 0002 is not built.
 
 ```sh
 npm i -g proveneio
@@ -29,6 +29,26 @@ A receipt generated on your machine is a **self-attestation by the person who wa
 | T2 | CI, on a runner you do not control | verification evidence, independently observed |
 
 Forged authorship is not preventable and is an explicit non-goal. Forged test evidence is prevented, because CI re-observes the run and signs it with an identity that has no stake in the merge.
+
+## Verifying a signed aggregate
+
+Provene does not implement signature verification, and will not: certificate chains, transparency-log inclusion proofs and signed timestamps are not a thing to reimplement in a side project. `gh attestation verify` does that half, and its exit code is the trust boundary.
+
+```sh
+provene verify-aggregate --repo owner/name --base <base-commit>
+```
+
+That recomputes the change set from your checkout, hands the result to `gh`, and then checks the half `gh` cannot: that the change set the signature covers is the work in front of you, and that the predicate's own claims are consistent. It reports three outcomes, not two — verified, failed, and *could not check* (no verifier installed). The third is never rendered as either of the others.
+
+With stock tooling only, no Provene verifier involved:
+
+```sh
+provene manifest --base <base-commit> --out changeset
+gh attestation verify changeset --repo owner/name \
+  --predicate-type https://provene.dev/attestation/code-change-aggregate/v0.1
+```
+
+`provene manifest` writes the exact bytes the change digest is taken over, so `sha256(changeset)` *is* the subject digest (RFC 0001 §4.1.1). That is what makes a Provene attestation addressable by tools that know nothing about Provene.
 
 Full specification, threat model and conformance suite: **https://github.com/provene-hq/provene**
 
