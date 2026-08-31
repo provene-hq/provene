@@ -101,7 +101,21 @@ Two things catch people in the first hour, and both look like the tool is broken
 - **`git commit -am` will not pick up a receipt.** `-a` stages modified tracked files, and a new receipt is neither. Use `git add -A` or `git add .provene/`.
 - **Hooks are read when Claude Code starts.** If it was already running when you ran `provene init`, restart it, or the session you are in now will end without writing anything.
 
-Claude Code is the only agent wired up today. The receipt format is not specific to it, and adding a second emitter is a hook script, not a fork.
+## Other agents
+
+Claude Code is the only agent wired up automatically, because it exposes lifecycle hooks that `provene init` can install. The format was never specific to it: `agent.vendor`, `agent.tool`, `agent.toolVersion` and `agent.model` have been in the schema since v0.1.
+
+Any other agent integrates through two commands and no fork:
+
+```sh
+provene record --session s1 --kind edit    --path src/auth.ts
+provene record --session s1 --kind command --argv "npm test" --exit 0
+provene emit   --session s1 --base <commit-before> --tool gemini-cli --vendor google
+```
+
+That produces the same receipt the hooks produce, including verification runs — the exit code is what makes a command into evidence. [`spec/emitters.md`](spec/emitters.md) is the contract: what to report, what never to record, and the one rule that matters most, which is not to guess. An emitter that infers a model from a version string makes `modelSource` worthless for everyone.
+
+**The interface is tested; specific agents are not.** `packages/cli/test/emitters.test.ts` drives the whole thing as a third-party emitter would, using nothing an agent other than Claude Code lacks. We have not run Cursor, Gemini CLI or Codex, and do not claim to support them. A working emitter for a second agent is the most useful contribution this project can take right now — the first one will find the assumptions the first emitter hid.
 
 ## What a receipt proves, and what it does not
 
@@ -206,6 +220,7 @@ Nothing here is stable. `proveneio` is published on npm and the action is usable
 ```
 spec/rfc/0001-receipt-schema.md    the receipt format
 spec/rfc/0002-policy-grammar.md    the policy language (unimplemented)
+spec/emitters.md                   how to make any other agent produce receipts
 spec/threat-model.md               adversaries, tiers, what this does not defend against
 spec/conformance/                  fixtures. These, and not the prose, are the specification
 spec/schema/                       JSON Schema for receipts and aggregates

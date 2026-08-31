@@ -94,10 +94,22 @@ function cmdEmit(args: Record<string, string | boolean>): number {
       entries, parent: base,
       agent: {
         tool: String(args["tool"] ?? hookTool ?? "unknown"),
+        // RFC 0001 §6.1 has carried these since v0.1 and nothing could set
+        // them, so every receipt named a tool and no vendor -- fine while one
+        // agent existed, useless the moment a repository has receipts from two.
+        ...(args["vendor"] !== undefined ? { vendor: String(args["vendor"]) } : {}),
+        ...(args["tool-version"] !== undefined ? { toolVersion: String(args["tool-version"]) } : {}),
         // The hook payload does not carry the model, and we do not guess:
         // modelSource is only meaningful when a model is actually recorded.
+        // An emitter that read the model from its own configuration says
+        // `configured`; one told by the runtime says `reported`. Guessing is
+        // the third option and it is not offered.
         ...(args["model"] !== undefined
-          ? { model: String(args["model"]), modelSource: "reported" as const }
+          ? {
+              model: String(args["model"]),
+              modelSource: (args["model-source"] === "configured" ? "configured" : "reported") as
+                "reported" | "configured",
+            }
           : {}),
       },
       ...(task !== undefined ? { task } : {}),
@@ -636,13 +648,29 @@ function cmdRecord(args: Record<string, string | boolean>): number {
       return 0;
     }
 
+    // The vendor-neutral path. `--stdin` above is an adapter for one agent's
+    // payload shape; this is the interface every other emitter uses, and it was
+    // second class: it could record that a command ran and not whether it
+    // worked. Since a verification run is derived from the exit code, an agent
+    // integrating this way could never produce test evidence at all -- the
+    // whole point of the format -- while the Claude Code adapter could.
     const sessionId = String(args["session"] ?? process.env["PROVENE_SESSION_ID"] ?? "");
     if (sessionId === "") return 0;
     const kind = String(args["kind"] ?? "note") as "edit" | "command" | "test" | "note";
+    const exitCode = args["exit"] !== undefined ? Number(args["exit"]) : undefined;
+    if (exitCode !== undefined && !Number.isInteger(exitCode)) {
+      out(`provene record: --exit must be an integer, got ${String(args["exit"])}`);
+      return 2;
+    }
+    const durationMs = args["duration-ms"] !== undefined ? Number(args["duration-ms"]) : undefined;
     append(sessionId, {
       at: new Date().toISOString(), kind,
       ...(args["path"] !== undefined ? { path: String(args["path"]) } : {}),
-      ...(args["argv"] !== undefined ? { argv: String(args["argv"]).split(" ") } : {}),
+      // Split on whitespace, not a single space, so `npm  test` and a tab do
+      // not produce empty argv entries that reach the redactor.
+      ...(args["argv"] !== undefined ? { argv: String(args["argv"]).trim().split(/\s+/) } : {}),
+      ...(exitCode !== undefined ? { exitCode } : {}),
+      ...(durationMs !== undefined && Number.isFinite(durationMs) ? { durationMs } : {}),
     });
   } catch (err) {
     recordError(String(args["session"] ?? "unknown"), err instanceof Error ? err.message : String(err));
@@ -718,8 +746,11 @@ function parse(argv: readonly string[]): Record<string, string | boolean> {
 function usage(): void {
   out("provene — evidence receipts for AI-generated code changes\n");
   out("  provene init [--dry-run] [--settings <path>]           install the Claude Code hooks");
-  out("  provene record --stdin | --session <id> ...            append to the session journal");
+  out("  provene record --stdin                                 append a Claude Code hook payload");
+  out("  provene record --session <id> --kind <k> [--path <p>]  append from any other agent");
+  out("                 [--argv <cmd>] [--exit <n>]");
   out("  provene emit   --session <id> [--base <commit>]        write a T0 receipt");
+  out("                 [--tool <t>] [--vendor <v>] [--model <m>]");
   out("  provene verify <receipt> [--against <commit>]          check integrity, report tier");
   out("  provene check  --base <ref> [--coverage <lcov.info>]   what a reviewer needs to look at");
   out("  provene promote --base <ref> --attester <id> --out <f>  build the T2 aggregate for CI to sign");
