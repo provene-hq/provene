@@ -385,7 +385,7 @@ See Threat Model v0.1 for the full analysis. In summary: a `T0`/`T1` receipt is 
 
 Hook configuration is within an agent's write scope when stored in the working tree; emitters SHOULD install hook wiring in user-level configuration.
 
-**Concealment resistance is a property of the deployed policy mode, not of this format.** A gate that activates only when a receipt is present has no false positives and no defense against a disabled hook; a gate that requires a receipt on every commit defends against a disabled hook and misfires on dependabot, web-UI edits, reverts and fork merges. Implementations MUST NOT describe receipts as preventing concealment without naming the policy mode assumed. See RFC 0002 and Threat Model v0.2, T-3.
+**Concealment resistance is a property of the deployed policy mode, not of this format.** A gate that activates only when a receipt is present has no false positives and no defense against a disabled hook; a gate that requires a receipt on every commit defends against a disabled hook and misfires on dependabot, web-UI edits, reverts and fork merges. Implementations MUST NOT describe receipts as preventing concealment without naming the policy mode assumed. See RFC 0002 and Threat Model v0.3, T-3.
 
 **Hook failure.** An emitter MUST NOT block, delay, or crash an agent session under any error condition, and MUST NOT emit a partial or inferred receipt to paper over a failure: no receipt is a recoverable state, a wrong receipt is not. Failures MUST be recorded in a durable local error journal outside the repository and surfaced at session end. That journal is a local self-report and is advisory only — it cannot be signed evidence of its own failure.
 

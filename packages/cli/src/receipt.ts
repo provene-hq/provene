@@ -114,6 +114,27 @@ export function statementDigest(serialized: string): string {
  * file. Collapsing them into one field is what let a fork's pull request be
  * reported as CI-attested.
  */
+/**
+ * Does this document actually carry a signature?
+ *
+ * RFC 0001 §8 makes the FILENAME declare the encoding, which is right: a
+ * document's claim about its own trustworthiness is not evidence. But nothing
+ * checked that a file named `.dsse.json` contained an envelope, so renaming an
+ * unsigned T0 statement to `forged.dsse.json` and editing one field made
+ * `verify` report `T2`, exit 0, and suppress the self-attestation warning.
+ *
+ * The filename still decides which question is asked. This decides whether the
+ * document can answer it.
+ */
+export function isDsseEnvelope(doc: unknown): boolean {
+  const d = doc as Record<string, unknown> | null;
+  if (d === null || typeof d !== "object") return false;
+  return typeof d["payload"] === "string"
+    && typeof d["payloadType"] === "string"
+    && Array.isArray(d["signatures"])
+    && d["signatures"].length > 0;
+}
+
 export type Assurance =
   | { readonly kind: "signed"; readonly tier: Tier }
   | { readonly kind: "unsigned"; readonly declared: Tier | "unknown" };

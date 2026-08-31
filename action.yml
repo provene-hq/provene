@@ -62,8 +62,13 @@ inputs:
   test-result:
     description: >-
       The outcome CI observed for this run's tests: PASSED, FAILED or WARNED.
-      Set it from the test step's own status, e.g.
-      `${{ steps.test.outcome == 'success' && 'PASSED' || 'FAILED' }}`.
+      Set it from the test step's own outcome. Give the test step an `id`, then
+      pass a workflow expression over `steps.<id>.outcome`; the README shows the
+      exact line. It cannot be shown here: GitHub evaluates every expression in
+      an action manifest, including the ones inside a description, and `steps`
+      is not a context that exists at manifest-load time. An example written out
+      in full here does not document the feature, it stops the action loading
+      at all.
 
       This is the only route by which independently observed test evidence
       reaches a signed receipt, and it is the product's central claim: a local
@@ -121,9 +126,18 @@ runs:
         # provenance tool. Pinning the action to a tag or SHA now pins the code
         # that actually runs.
         SRC="$GITHUB_ACTION_PATH/packages/cli/src/cli.ts"
-        MAJOR=$(node -p "process.versions.node.split('.')[0]")
-        MINOR=$(node -p "process.versions.node.split('.')[1]")
-        if [ -f "$SRC" ] && { [ "$MAJOR" -ge 23 ] || { [ "$MAJOR" -eq 22 ] && [ "$MINOR" -ge 6 ]; }; }; then
+
+        # Probe the capability rather than compare a version.
+        #
+        # This was `node >= 22.6`, because 22.6 is when --experimental-strip-types
+        # arrived. Type stripping only became the default in 22.18.0, so every
+        # runner on 22.6 through 22.17 was sent down the bundled-source path and
+        # died on an unknown file extension, instead of taking the npm fallback
+        # that exists for exactly that case. Running one file answers the
+        # question that a version number only approximates.
+        PROBE="${RUNNER_TEMP:-/tmp}/provene-probe.ts"
+        printf 'const ok: number = 0;\nprocess.exit(ok);\n' > "$PROBE"
+        if [ -f "$SRC" ] && node "$PROBE" >/dev/null 2>&1; then
           # Two outputs, not one interpolated command string. A single `cmd`
           # had to be word-split at the point of use to become an argv, so a
           # runner whose path contains a space -- routine on self-hosted and
