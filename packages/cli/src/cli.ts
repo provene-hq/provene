@@ -7,6 +7,7 @@ import { append, read, journalDir, recordError, markEmitted, orphanedSessions } 
 import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID } from "./redact.ts";
 import { buildT0, canonicalJson, checkStatement, receiptFileName, type Statement } from "./receipt.ts";
 import { changeDigest } from "./changedigest.ts";
+import { runCheck, annotations, summary } from "./check.ts";
 import { readStdin, parsePayload, toJournalEntries } from "./hookinput.ts";
 import {
   userSettingsPath, readSettings, withProveneHooks, writeSettings,
@@ -125,6 +126,38 @@ function cmdVerify(args: Record<string, string | boolean>): number {
   out("provene: receipt failed verification");
   for (const p of r.problems) out(`  - ${p}`);
   return 1;
+}
+
+function cmdCheck(args: Record<string, string | boolean>): number {
+  let root: string;
+  try { root = repoRoot(); } catch { out("provene check: not inside a git repository"); return 2; }
+
+  const baseRef = String(args["base"] ?? "HEAD");
+  let base: string;
+  try { base = git(["rev-parse", baseRef], root); }
+  catch { out(`provene check: cannot resolve ${baseRef}`); return 2; }
+
+  const result = runCheck({
+    root, base,
+    ...(args["coverage"] !== undefined ? { lcovPath: String(args["coverage"]) } : {}),
+  });
+
+  if (args["format"] === "json") {
+    out(JSON.stringify(result, null, 2));
+  } else {
+    for (const line of summary(result)) out(line);
+  }
+
+  if (args["annotate"] === "github") {
+    for (const a of annotations(result)) out(a);
+  }
+
+  // A malformed receipt always fails: a forgeable receipt is worse than none
+  // (RFC 0002 section 9, receipt-integrity). Missing evidence is reported, not
+  // failed -- that judgement belongs to a policy, which is a separate command.
+  const broken = result.receipts.filter((r) => !r.ok).length;
+  if (broken > 0) { out(`\n${broken} receipt(s) failed verification.`); return 1; }
+  return 0;
 }
 
 function cmdDoctor(): number {
@@ -311,6 +344,7 @@ let code = 0;
 switch (command) {
   case "emit": code = cmdEmit(args); break;
   case "verify": code = cmdVerify(args); break;
+  case "check": code = cmdCheck(args); break;
   case "doctor": code = cmdDoctor(); break;
   case "record": code = cmdRecord(args); break;
   case "init": code = cmdInit(args); break;
@@ -321,6 +355,7 @@ switch (command) {
     out("  provene record --stdin | --session <id> ...            append to the session journal");
     out("  provene emit   --session <id> [--base <commit>]        write a T0 receipt");
     out("  provene verify <receipt> [--against <commit>]          check integrity, report tier");
+    out("  provene check  --base <ref> [--coverage <lcov.info>]   what a reviewer needs to look at");
     out("  provene doctor                                         check the local setup");
     code = command === undefined ? 0 : 2;
 }

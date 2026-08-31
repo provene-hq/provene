@@ -1,0 +1,69 @@
+name: Provene
+description: >-
+  Verify evidence receipts on a pull request and annotate the changed lines that
+  no test executed.
+author: provene-hq
+branding:
+  icon: file-text
+  color: gray-dark
+
+inputs:
+  version:
+    description: Version of the provene CLI to use.
+    required: false
+    default: latest
+  base:
+    description: >-
+      Commit to diff against. Defaults to the pull request's base, which is what
+      a reviewer is actually comparing.
+    required: false
+    default: ""
+  coverage:
+    description: >-
+      Path to an lcov report. Without it the action can verify receipts but
+      cannot establish which changed lines a test executed, and says so rather
+      than implying coverage it does not have.
+    required: false
+    default: ""
+  fail-on-invalid-receipt:
+    description: >-
+      Fail the check when a receipt is malformed. A forgeable receipt is worse
+      than no receipt, so this defaults to true.
+    required: false
+    default: "true"
+
+runs:
+  using: composite
+  steps:
+    - name: Install provene
+      shell: bash
+      run: npm install -g proveneio@${{ inputs.version }}
+
+    - name: Check receipts and evidence
+      shell: bash
+      env:
+        PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
+        PROVENE_COVERAGE: ${{ inputs.coverage }}
+        PROVENE_STRICT: ${{ inputs.fail-on-invalid-receipt }}
+      run: |
+        set -uo pipefail
+        args=(check --annotate github)
+        [ -n "${PROVENE_BASE:-}" ] && args+=(--base "$PROVENE_BASE")
+        [ -n "${PROVENE_COVERAGE:-}" ] && args+=(--coverage "$PROVENE_COVERAGE")
+
+        provene "${args[@]}" | tee "$RUNNER_TEMP/provene.txt"
+        status=${PIPESTATUS[0]}
+
+        {
+          echo "## Provene"
+          echo
+          echo '```'
+          cat "$RUNNER_TEMP/provene.txt"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+
+        if [ "$status" -ne 0 ] && [ "$PROVENE_STRICT" != "true" ]; then
+          echo "provene: receipt problems found, not failing the check (fail-on-invalid-receipt=false)"
+          exit 0
+        fi
+        exit "$status"

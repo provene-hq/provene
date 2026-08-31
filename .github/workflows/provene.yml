@@ -1,0 +1,46 @@
+# The repository runs its own product against its own pull requests.
+# Every visitor sees live receipts before they read a line of the README.
+name: provene
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # The action diffs against the pull request base, which is not in a
+          # shallow clone.
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Install and build
+        run: |
+          npm --prefix packages/cli install
+          npm --prefix packages/cli run typecheck
+          npm --prefix packages/cli run build
+
+      - name: Test with coverage
+        working-directory: packages/cli
+        run: |
+          mkdir -p coverage
+          node --test --experimental-test-coverage \
+               --test-reporter=lcov --test-reporter-destination=coverage/lcov.info \
+               --test-reporter=spec --test-reporter-destination=stdout \
+               'test/*.test.ts'
+
+      - name: Conformance suite
+        run: python3 spec/conformance/runner/run.py
+
+      - name: Provene
+        if: github.event_name == 'pull_request'
+        uses: ./
+        with:
+          coverage: packages/cli/coverage/lcov.info

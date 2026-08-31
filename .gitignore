@@ -14,3 +14,6 @@ Thumbs.db
 # lives at spec/threat-model.md — publishing that builds trust; publishing your
 # kill gates and pricing does not.
 planning/
+
+# Coverage reports are build output.
+packages/cli/coverage/
