@@ -391,7 +391,7 @@ function cmdVerifyAggregate(args: Record<string, string | boolean>): number {
 
   const checks = gh.statements.map((statement) => checkAggregate(statement, {
     subjectDigest, base,
-    signerIdentities: gh.identities,
+    signerIdentities: gh.signers,
     ...(commits !== undefined ? { commitsInRange: commits } : {}),
   }));
 

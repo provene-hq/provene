@@ -36,7 +36,7 @@ const sound = () => ({
 /** What ghVerify would return for a given raw verifier result. */
 const gh = (over: Partial<GhResult>): GhResult => ({
   verified: false, ran: true, noAttestation: false,
-  statements: [], identities: [], message: "", ...over,
+  statements: [], identities: [], signers: [], message: "", ...over,
 });
 
 const decide = (g: GhResult) =>
@@ -138,4 +138,39 @@ test("a signed aggregate naming an attester the certificate contradicts is rejec
     { subjectDigest: DIGEST });
   assert.equal(unchecked.ok, true);
   assert.match(unchecked.notes.join(" "), /could not be checked against the certificate/);
+});
+
+test("the repository URI is not a signer identity", () => {
+  // A list built for display was reused as a security boundary:
+  // `sourceRepositoryURI` sat alongside the workflow SAN, so an aggregate
+  // declaring the bare repository as its attester matched, and any workflow in
+  // that repository could attest under a name they all share.
+  const raw = JSON.stringify([{
+    verificationResult: {
+      statement: sound(),
+      signature: { certificate: {
+        subjectAlternativeName: "https://github.com/o/r/.github/workflows/untrusted-pr.yml@refs/heads/main",
+        sourceRepositoryURI: "https://github.com/o/r",
+      } },
+    },
+  }]);
+  const { identities, signers } = parseGhOutput(raw);
+  assert.equal(identities.length, 2, "the repository URI is still worth showing a human");
+  assert.deepEqual(signers, ["https://github.com/o/r/.github/workflows/untrusted-pr.yml@refs/heads/main"]);
+
+  const claimsTheRepo = {
+    ...sound(),
+    predicate: {
+      ...sound().predicate,
+      attestation: { tier: "T2", trustRoot: { kind: "sigstore-github" }, attester: { identity: "o/r" } },
+    },
+  };
+  const r = checkAggregate(claimsTheRepo, { subjectDigest: DIGEST, signerIdentities: signers });
+  assert.equal(r.ok, false);
+  assert.match(r.problems.join(" "), /does not name a workflow/);
+
+  // And the same document passed the display list, which is the defect.
+  const viaDisplayList = checkAggregate(claimsTheRepo, { subjectDigest: DIGEST, signerIdentities: identities });
+  assert.match(viaDisplayList.problems.join(" "), /does not name a workflow/,
+    "the workflow-shape rule must hold even if a caller passes the wrong list");
 });

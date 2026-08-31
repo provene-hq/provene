@@ -14,6 +14,39 @@ permissions:
   attestations: write    # store the signed attestation
 
 jobs:
+  # The suite had never run anywhere but Linux, and a reviewer running it on
+  # Windows found a path-separator assertion that had been green here for days.
+  # This project is developed on Windows and its users are wherever they are;
+  # one runner is not a test matrix, it is a habit.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # `shell: bash` on every step, Windows included: the runners provide it,
+      # and it means the glob below is expanded the same way on all three
+      # rather than depending on pwsh, cmd and sh agreeing.
+      - run: npm --prefix packages/cli install
+        shell: bash
+      - run: npm --prefix packages/cli run typecheck
+        shell: bash
+      - name: Tests
+        shell: bash
+        working-directory: packages/cli
+        run: node --test 'test/*.test.ts'
+      - name: Conformance suite
+        shell: bash
+        run: |
+          # windows-latest does not reliably put `python3` on PATH.
+          PY=$(command -v python3 || command -v python)
+          "$PY" spec/conformance/runner/run.py
+
   check:
     runs-on: ubuntu-latest
     steps:
