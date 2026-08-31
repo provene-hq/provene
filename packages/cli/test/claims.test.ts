@@ -270,8 +270,27 @@ test("every flag the action and the docs actually pass is accepted", () => {
     ["init", "--agent", "gemini", "--settings", "s.json", "--dry-run"],
     ["doctor", "--agent", "gemini", "--settings", "s.json"],
   ];
-  for (const argv of known) {
-    const r = spawnSync(process.execPath, [CLI, ...argv], { encoding: "utf8" });
-    assert.doesNotMatch(r.stdout, /unknown option/, `${argv[0]}: ${r.stdout}`);
+  // In a scratch directory, not here. These are the real commands with their
+  // real output flags, so running them in the repository wrote `o.json`, `m`
+  // and a receipt into `.provene/` on every `npm test` -- and one such run got
+  // committed and pushed. A test suite that dirties its own working tree
+  // eventually commits the dirt.
+  const sandbox = mkdtempSync(join(tmpdir(), "provene-flags-"));
+  try {
+    for (const argv of known) {
+      const r = spawnSync(process.execPath, [CLI, ...argv], { cwd: sandbox, encoding: "utf8" });
+      assert.doesNotMatch(r.stdout, /unknown option/, `${argv[0]}: ${r.stdout}`);
+    }
+  } finally {
+    rmSync(sandbox, { recursive: true, force: true });
   }
+});
+
+test("the test suite leaves the repository it runs in unchanged", () => {
+  // The guard for the above. `git status --porcelain` inside the checkout,
+  // limited to the paths these tests were writing to.
+  const root = join(import.meta.dirname, "..", "..", "..");
+  const dirty = execFileSync("git", ["status", "--porcelain", "--", "m", "packages/cli/o.json", "packages/cli/m"],
+    { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  assert.equal(dirty, "", `test run left files behind:\n${dirty}`);
 });

@@ -20,3 +20,9 @@ packages/cli/coverage/
 
 # Sample receipts generated for schema validation.
 .samples/
+
+# Output paths the flag-acceptance test used to write here. It writes to a
+# scratch directory now; these remain so a stray manual run cannot repeat the
+# commit that put them in a public repository.
+o.json
+m
