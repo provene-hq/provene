@@ -53,6 +53,30 @@ inputs:
       check -- so set sign: false where the platform cannot store it.
     required: false
     default: "false"
+  test-result:
+    description: >-
+      The outcome CI observed for this run's tests: PASSED, FAILED or WARNED.
+      Set it from the test step's own status, e.g.
+      `${{ steps.test.outcome == 'success' && 'PASSED' || 'FAILED' }}`.
+
+      This is the only route by which independently observed test evidence
+      reaches a signed receipt, and it is the product's central claim: a local
+      receipt is a self-attestation by the party who wants the merge, while CI
+      re-observes the run on a runner that developer does not control.
+
+      Left empty, the aggregate records no verification runs. That is the honest
+      default — this action does not run your tests and must not report an
+      outcome it did not observe — but it means the signed receipt carries no
+      test evidence at all. RFC 0001 section 6.4: an absent entry is
+      UNOBSERVED, never a claim that nothing ran.
+    required: false
+    default: ""
+  test-tool:
+    description: >-
+      What produced the result above (`vitest`, `pytest`, `go test`). Recorded
+      verbatim; nothing infers it.
+    required: false
+    default: ""
   fail-on-invalid-receipt:
     description: >-
       Fail the check when a receipt is malformed. A forgeable receipt is worse
@@ -147,6 +171,8 @@ runs:
         PROVENE_COVERAGE: ${{ inputs.coverage }}
         PROVENE_PUBLIC: ${{ !github.event.repository.private }}
         PROVENE_PR: ${{ github.event.pull_request.html_url }}
+        PROVENE_TEST_RESULT: ${{ inputs.test-result }}
+        PROVENE_TEST_TOOL: ${{ inputs.test-tool }}
       run: |
         set -uo pipefail
         args=(promote --head "$GITHUB_SHA"
@@ -158,6 +184,17 @@ runs:
         [ -n "${PROVENE_BASE:-}" ] && args+=(--base "$PROVENE_BASE")
         [ -n "${PROVENE_COVERAGE:-}" ] && args+=(--coverage "$PROVENE_COVERAGE")
         [ -n "${PROVENE_PR:-}" ] && args+=(--pull-request "$PROVENE_PR")
+        # Passed through verbatim, never derived. This action does not run your
+        # tests, so the only outcome it may record is one the caller observed
+        # and stated. An unset value records no run rather than a green one.
+        if [ -n "${PROVENE_TEST_RESULT:-}" ]; then
+          args+=(--test-result "$PROVENE_TEST_RESULT")
+          [ -n "${PROVENE_TEST_TOOL:-}" ] && args+=(--test-tool "$PROVENE_TEST_TOOL")
+        else
+          echo "provene: no test-result input; the signed aggregate will record no" \
+               "verification runs. Set the test-result input to carry CI's own" \
+               "observation into the receipt."
+        fi
         # Only a public repository publishes to the public transparency log.
         # Fulcio puts the signer's identity in it, so a private repository that
         # published would leak its contributors and their activity timing

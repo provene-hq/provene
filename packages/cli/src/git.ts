@@ -107,7 +107,40 @@ function untrackedEntries(cwd?: string): ChangeEntry[] {
  *   :<srcmode> <dstmode> <srcsha> <dstsha> <status>\0<path>\0
  * with renames and copies carrying a second NUL-separated path.
  */
-export function diffEntries(base: string, cwd?: string): ChangeEntry[] {
+/**
+ * The merge base of two commits, or undefined where git cannot compute one.
+ *
+ * A range in this tool means what a reviewer is looking at on the pull request
+ * page, which is the THREE-dot diff: `base...head`, equivalently
+ * `merge-base(base, head)..head`. A two-dot diff against a base branch that has
+ * moved on reports the base branch's own newer commits as deletions performed
+ * by the branch under review.
+ *
+ * Undefined rather than throwing: a shallow clone legitimately cannot compute
+ * this, and refusing to run there would be worse than the two-dot answer, which
+ * is what the caller falls back to — loudly.
+ */
+export function mergeBase(a: string, b: string, cwd?: string): string | undefined {
+  try { return git(["merge-base", a, b], cwd); } catch { return undefined; }
+}
+
+/**
+ * The change set between a commit and the WORKING TREE, including files git has
+ * never seen.
+ *
+ * This is the right question at the end of an agent session: the receipt is
+ * written before the commit exists, so uncommitted edits and new files are
+ * exactly what it must bind to.
+ *
+ * It is the WRONG question for anything covering a committed range — see
+ * `committedEntries`. The name `diffEntries` did not say which, and a reviewer
+ * found the consequence: `promote` used it in CI, where a build step had
+ * already dirtied the tree, so the signed digest covered `coverage/lcov.info`
+ * and an npm-rewritten lockfile alongside the one file the pull request
+ * actually changed. No checkout of that commit can ever reproduce it, so the
+ * signature was guaranteed to fail verification forever.
+ */
+export function workingTreeEntries(base: string, cwd?: string): ChangeEntry[] {
   // -z already defeats path quoting for --raw, but core.quotePath is pinned so
   // behaviour does not depend on the user's configuration.
   // core.abbrev=no is essential, not cosmetic. `git diff --raw` ABBREVIATES
@@ -126,6 +159,26 @@ export function diffEntries(base: string, cwd?: string): ChangeEntry[] {
     cwd: cwd ?? process.cwd(),
     maxBuffer: 64 * 1024 * 1024,
   });
+  const { pending, needHashing } = parseRaw(raw);
+  const hashed = hashObjects(needHashing, cwd);
+  const out: ChangeEntry[] = pending.map((e) => ({
+    ...e,
+    postBlob: e.postBlob !== "" ? e.postBlob : (e.status === "D" ? "-" : hashed.get(e.path) ?? "-"),
+  }));
+  return [...out, ...untrackedEntries(cwd)];
+}
+
+/**
+ * Splits `git diff --raw -z` into records.
+ *
+ * `postBlob` is left as "" where git reported all-zeros, meaning "no blob
+ * object exists for this side yet". Only the working-tree caller can resolve
+ * that, by hashing the file; between two commits it cannot occur.
+ */
+function parseRaw(raw: string): {
+  pending: Array<ChangeEntry & { postBlob: string }>;
+  needHashing: string[];
+} {
   const fields = raw.split("\0");
   const pending: Array<ChangeEntry & { postBlob: string }> = [];
   const needHashing: string[] = [];
@@ -158,13 +211,33 @@ export function diffEntries(base: string, cwd?: string): ChangeEntry[] {
       // content to bind to -- without this, two entirely different unstaged
       // edits to the same path produce the SAME change digest, which is the
       // normal case at session end and makes the binding decorative.
-      postBlob: isNullOid(postBlob) ? "" : postBlob, // filled in below
+      postBlob: isNullOid(postBlob) ? "" : postBlob, // resolved by the caller
     });
   }
-  const hashed = hashObjects(needHashing, cwd);
-  const out: ChangeEntry[] = pending.map((e) => ({
-    ...e,
-    postBlob: e.postBlob !== "" ? e.postBlob : (e.status === "D" ? "-" : hashed.get(e.path) ?? "-"),
-  }));
-  return [...out, ...untrackedEntries(cwd)];
+  return { pending, needHashing };
+}
+
+/**
+ * The change set between two COMMITS.
+ *
+ * Nothing here touches the working tree: both sides are committed objects, so
+ * every blob id is real and there is nothing to hash and no untracked file to
+ * consider. This is what any later verifier can reproduce from a checkout,
+ * which is the only kind of change set worth signing.
+ */
+export function committedEntries(base: string, head: string, cwd?: string): ChangeEntry[] {
+  const raw = execFileSync("git", [
+    "-c", "core.quotePath=false", "-c", "core.abbrev=no",
+    "diff", "--raw", "-M", "-z", base, head,
+  ], { encoding: "utf8", cwd: cwd ?? process.cwd(), maxBuffer: 64 * 1024 * 1024 });
+  const { pending } = parseRaw(raw);
+  // A deletion has no post image; nothing else between two commits can lack a
+  // blob object, so an empty postBlob here would be a parse failure rather than
+  // something to paper over with a hash of a working-tree file.
+  return pending.map((e) => {
+    if (e.postBlob === "" && e.status !== "D") {
+      throw new Error(`git reported no post-image blob for ${e.path} between two commits`);
+    }
+    return { ...e, postBlob: e.status === "D" ? "-" : e.postBlob };
+  });
 }

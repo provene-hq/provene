@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, existsSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { diffEntries, repoRoot, headCommit, rootCommit, git } from "./git.ts";
+import { workingTreeEntries, committedEntries, mergeBase, repoRoot, headCommit, rootCommit, git } from "./git.ts";
 import { append, read, journalDir, recordError, markEmitted, orphanedSessions, journalInsideRepo } from "./journal.ts";
 import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID, TEST_SHAPES } from "./redact.ts";
 import { buildT0, canonicalJson, checkStatement, receiptFileName, type Statement } from "./receipt.ts";
@@ -52,7 +52,7 @@ function cmdEmit(args: Record<string, string | boolean>): number {
     // Resolve to a commit id. A receipt that records "HEAD" as its parent
     // records nothing: HEAD moves, and the binding must name a fixed commit.
     const base = git(["rev-parse", String(args["base"] ?? "HEAD")], root);
-    const entries = diffEntries(base, root);
+    const entries = workingTreeEntries(base, root);
     if (entries.length === 0) { out("provene: no changes to attest"); return 0; }
 
     const salt = deriveSalt(rootCommit());
@@ -143,7 +143,7 @@ function cmdVerify(args: Record<string, string | boolean>): number {
     ? (() => {
         const ref = String(args["against"]);
         const sha = git(["rev-parse", ref]);
-        return { entries: diffEntries(sha), parent: sha };
+        return { entries: workingTreeEntries(sha), parent: sha };
       })()
     : undefined;
   // The filename declares the encoding (RFC 0001 8), so verify must consult it
@@ -167,18 +167,47 @@ function cmdVerify(args: Record<string, string | boolean>): number {
   return 1;
 }
 
+/**
+ * What a range means.
+ *
+ * `base..head` is resolved to `merge-base(base, head)..head` — the three-dot
+ * diff, which is what a reviewer sees on the pull request page. A two-dot diff
+ * against a base branch that has moved on reports the base branch's own newer
+ * commits as deletions performed by the branch under review, and would sign a
+ * digest saying so.
+ *
+ * Where git cannot compute a merge base — a shallow clone is the usual reason,
+ * and this action fetches the base with --depth=1 — the given base is used and
+ * the caller is told, because silently signing the two-dot answer is how a
+ * verifier ends up unable to reproduce a digest and unable to say why.
+ */
+function resolveRange(root: string, baseRef: string, headRef: string):
+  { base: string; head: string; fellBack: boolean } {
+  const head = git(["rev-parse", headRef], root);
+  const given = git(["rev-parse", baseRef], root);
+  const mb = mergeBase(given, head, root);
+  return { base: mb ?? given, head, fellBack: mb === undefined };
+}
+
+const rangeNote = (r: { fellBack: boolean }): string[] =>
+  r.fellBack
+    ? ["  note: no merge base could be computed (a shallow clone cannot), so this is a",
+       "        two-dot diff against the base you gave. If the base branch has advanced,",
+       "        its own commits will appear here as changes."]
+    : [];
+
 function cmdCheck(args: Record<string, string | boolean>): number {
   let root: string;
   try { root = repoRoot(); } catch { out("provene check: not inside a git repository"); return 2; }
 
   const baseRef = String(args["base"] ?? "HEAD");
-  let base: string;
-  try { base = git(["rev-parse", baseRef], root); }
+  let range: { base: string; head: string; fellBack: boolean };
+  try { range = resolveRange(root, baseRef, String(args["head"] ?? "HEAD")); }
   catch { out(`provene check: cannot resolve ${baseRef}`); return 2; }
+  const base = range.base;
 
   const result = runCheck({
-    root, base,
-    ...(args["head"] !== undefined ? { head: git(["rev-parse", String(args["head"])], root) } : {}),
+    root, base, head: range.head,
     ...(args["coverage"] !== undefined ? { lcovPath: String(args["coverage"]) } : {}),
     ...(args["exclude"] !== undefined ? { exclude: String(args["exclude"]).split(",") } : {}),
   });
@@ -187,6 +216,7 @@ function cmdCheck(args: Record<string, string | boolean>): number {
     out(JSON.stringify(result, null, 2));
   } else {
     for (const line of summary(result)) out(line);
+    for (const line of rangeNote(range)) out(line);
   }
 
   if (args["annotate"] === "github") {
@@ -213,8 +243,9 @@ function cmdPromote(args: Record<string, string | boolean>): number {
   let root: string;
   try { root = repoRoot(); } catch { out("provene promote: not inside a git repository"); return 2; }
 
-  const base = git(["rev-parse", String(args["base"] ?? "HEAD")], root);
-  const head = git(["rev-parse", String(args["head"] ?? "HEAD")], root);
+  const range = resolveRange(root, String(args["base"] ?? "HEAD"), String(args["head"] ?? "HEAD"));
+  const base = range.base;
+  const head = range.head;
 
   const identity = String(args["attester"] ?? process.env["GITHUB_WORKFLOW_REF"] ?? "");
   if (identity === "") {
@@ -265,7 +296,7 @@ function cmdPromote(args: Record<string, string | boolean>): number {
   const manifestPath = args["manifest"] !== undefined
     ? String(args["manifest"])
     : outPath !== undefined ? `${outPath}.changeset` : undefined;
-  if (manifestPath !== undefined) writeManifest(manifestPath, diffEntries(base, root));
+  if (manifestPath !== undefined) writeManifest(manifestPath, committedEntries(base, head, root));
 
   const body = JSON.stringify(predicate, null, 2) + "\n";
   if (outPath !== undefined) {
@@ -273,6 +304,7 @@ function cmdPromote(args: Record<string, string | boolean>): number {
     out(`provene: wrote aggregate predicate to ${outPath}`);
     out(`  predicate-type ${AGGREGATE_PREDICATE_TYPE}`);
     out(`  subject-digest sha256:${subjectDigest}`);
+    for (const line of rangeNote(range)) out(line);
     if (manifestPath !== undefined) out(`  changeset manifest ${manifestPath} (sha256 = the subject digest)`);
     const c = (predicate as any).coverage;
     out(`  ${c.constituentsFound} constituent receipt(s) over ${c.commitsInRange} commit(s)` +
@@ -294,8 +326,11 @@ function cmdPromote(args: Record<string, string | boolean>): number {
 function cmdManifest(args: Record<string, string | boolean>): number {
   let root: string;
   try { root = repoRoot(); } catch { out("provene manifest: not inside a git repository"); return 2; }
-  const base = git(["rev-parse", String(args["base"] ?? "HEAD")], root);
-  const entries = diffEntries(base, root);
+  const range = resolveRange(root, String(args["base"] ?? "HEAD"), String(args["head"] ?? "HEAD"));
+  // Committed state only. The manifest exists so a third party can reproduce
+  // what was signed from a checkout; uncommitted work is by definition not in
+  // any checkout they can obtain.
+  const entries = committedEntries(range.base, range.head, root);
   const digest = changeDigest(entries);
   const outPath = args["out"] !== undefined ? String(args["out"]) : undefined;
   if (outPath === undefined) {
@@ -307,6 +342,7 @@ function cmdManifest(args: Record<string, string | boolean>): number {
   out(`provene: wrote ${outPath}`);
   out(`  sha256 ${digest}`);
   out("  this is the change digest — the same bytes any checkout of this range reproduces");
+  for (const line of rangeNote(range)) out(line);
   return 0;
 }
 
@@ -329,11 +365,12 @@ function cmdVerifyAggregate(args: Record<string, string | boolean>): number {
     return 2;
   }
 
-  let base: string;
-  try { base = git(["rev-parse", String(args["base"] ?? "HEAD")], root); }
+  let range: { base: string; head: string; fellBack: boolean };
+  try { range = resolveRange(root, String(args["base"] ?? "HEAD"), String(args["head"] ?? "HEAD")); }
   catch { out(`provene verify-aggregate: cannot resolve ${String(args["base"] ?? "HEAD")}`); return 2; }
+  const base = range.base;
 
-  const entries = diffEntries(base, root);
+  const entries = committedEntries(base, range.head, root);
   const subjectDigest = changeDigest(entries);
   const manifestPath = join(mkdtempSync(join(tmpdir(), "provene-")), "changeset");
   writeManifest(manifestPath, entries);
@@ -380,7 +417,7 @@ function cmdVerifyAggregate(args: Record<string, string | boolean>): number {
   }
 
   const commits = (() => {
-    try { return git(["rev-list", `${base}..HEAD`], root).split("\n").filter((l) => l !== "").length; }
+    try { return git(["rev-list", `${base}..${range.head}`], root).split("\n").filter((l) => l !== "").length; }
     catch { return undefined; }
   })();
 
