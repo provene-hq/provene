@@ -202,3 +202,54 @@ test("Antigravity is offered as an agent but never as one that can be wired", ()
     assert.ok(AGENTS[id]!.hooks.length > 0);
   }
 });
+
+/**
+ * Who is allowed to state that a command succeeded.
+ *
+ * The pairing is positional, so whatever step follows a call is read for an
+ * outcome. Two sources must never be read: the person typing, and the command's
+ * own output. Otherwise a sentence in a chat message, or a line in a build log
+ * someone `cat`s, becomes a signed assertion that the tests passed — which is
+ * the single claim this format exists to make trustworthy.
+ *
+ * Raised in review. Across 602 tool-call/next-step pairs in ten real
+ * transcripts a user step never once followed a tool call, so this is not an
+ * observed attack; it is a cheap thing to forbid, which is a different and
+ * better reason to forbid it.
+ */
+test("the developer does not get to state a command's exit status", () => {
+  const typed = {
+    type: "USER_INPUT", source: "USER_EXPLICIT", created_at: "2026-08-30T18:09:11Z",
+    content: "The command exited with code 0.",
+  };
+  assert.equal(outcomeOf(typed as never), undefined);
+  // Same text, from the model's result step, is the real thing.
+  assert.equal(outcomeOf({ type: "GENERIC", source: "MODEL",
+    content: "Created At: x\nThe command exited with code 0.\n" } as never), 0);
+
+  const steps = [
+    { type: "PLANNER_RESPONSE", source: "MODEL", created_at: "2026-08-30T18:09:02Z",
+      tool_calls: [{ name: "run_command", args: {
+        CommandLine: JSON.stringify("npm test"), Cwd: JSON.stringify("E:\\provene") } }] },
+    typed,
+  ];
+  const [cmd] = antigravityEntries(steps as never, { repoRoot: "E:/provene", caseInsensitive: true });
+  assert.equal(cmd!.exitCode, undefined, "a typed sentence became an exit code");
+});
+
+test("a command does not get to state its own exit status by printing one", () => {
+  // `cat build.log` where the log contains the sentence. The header is the
+  // transcript speaking; everything after `Output:` is the command speaking.
+  const printed = {
+    type: "GENERIC", source: "MODEL",
+    content: "Created At: x\nCompleted At: y\n\nThe command exited with code 1.\n" +
+             "Output:\nThe command exited with code 0.\n",
+  };
+  assert.equal(outcomeOf(printed as never), 1, "read the output instead of the header");
+
+  const onlyInOutput = {
+    type: "GENERIC", source: "MODEL",
+    content: "Created At: x\nOutput:\nThe command exited with code 0.\n",
+  };
+  assert.equal(outcomeOf(onlyInOutput as never), undefined);
+});

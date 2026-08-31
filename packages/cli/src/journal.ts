@@ -8,7 +8,7 @@
  * The journal lives outside the repository. It holds unredacted observations and
  * must never be committed; the receipt built from it is the redacted artifact.
  */
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -111,6 +111,12 @@ export function journalPath(sessionId: string): string {
 export function resetSession(sessionId: string): void {
   const p = journalPath(sessionId);
   if (existsSync(p)) writeFileSync(p, "", "utf8");
+  // The emitted marker goes with it. Left behind, it says a receipt was
+  // produced for evidence that has since been replaced, so `doctor` stays quiet
+  // about a session holding newly imported work that was never emitted -- the
+  // checkup silently stops covering the case it exists for.
+  const marker = join(journalDir(), "sessions", `${safeSessionId(sessionId)}.emitted`);
+  if (existsSync(marker)) rmSync(marker, { force: true });
 }
 
 export function append(sessionId: string, entry: JournalEntry): void {

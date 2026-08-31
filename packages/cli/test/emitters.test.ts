@@ -47,9 +47,9 @@ test("an agent that is not Claude Code can produce a complete receipt", () => {
     const base = git("rev-parse", "HEAD");
 
     // Everything below uses only flags. No hook payload, no Claude Code.
-    run(repo, home, ["record", "--session", "g1", "--kind", "edit", "--path", "src/b.ts"]);
+    run(repo, home, ["record", "--session", "g1", "--kind", "edit", "--path", "src/b.ts", "--cwd", repo]);
     run(repo, home, ["record", "--session", "g1", "--kind", "command",
-                     "--argv", "npm test", "--exit", "1", "--duration-ms", "4200"]);
+                     "--argv", "npm test", "--exit", "1", "--duration-ms", "4200", "--cwd", repo]);
     writeFileSync(join(repo, "src/b.ts"), "export const b = 2;\n");
 
     const r = run(repo, home, ["emit", "--session", "g1", "--base", base,
@@ -89,7 +89,7 @@ test("a passing run and a failing run are distinguished on the generic path", ()
 
     for (const [session, exit, expected] of [["ok", "0", "PASSED"], ["bad", "1", "FAILED"]] as const) {
       run(repo, home, ["record", "--session", session, "--kind", "command",
-                       "--argv", "npm test", "--exit", exit]);
+                       "--argv", "npm test", "--exit", exit, "--cwd", repo]);
       const r = run(repo, home, ["emit", "--session", session, "--base", base, "--tool", "some-agent"]);
       assert.equal(r.status, 0, r.stdout + r.stderr);
       const f = readdirSync(join(repo, ".provene")).sort().at(-1)!;
@@ -188,12 +188,16 @@ test("a command run in another repository is not evidence about this one", () =>
 
     assert.ok(shapes.includes("npm test"), "the command run here was dropped");
     assert.ok(!shapes.includes("pytest"), "a command run elsewhere became evidence about this change");
-    // Unknown is not guilty: an emitter that passes no --cwd is silent, not
-    // wrong, and dropping its evidence would break every existing journal.
+    // An emitter that passes no --cwd is silent, not wrong, so the command is
+    // still recorded -- but it yields no OUTCOME, and therefore no verification
+    // run. "It ran" survives; "it ran here and passed" does not.
     assert.ok(shapes.includes("cargo test"), "a command with no recorded directory was dropped");
+    const cargo = (pred["commands"] as Array<{ shape?: string; exitCode?: number }>)
+      .find((c) => c.shape === "cargo test")!;
+    assert.equal(cargo.exitCode, undefined, "an unlocated command kept its exit code");
 
     const runs = pred["verification"] as { runs: Array<{ tool: string }> };
-    assert.deepEqual(runs.runs.map((r) => r.tool).sort(), ["cargo", "npm"]);
+    assert.deepEqual(runs.runs.map((r) => r.tool), ["npm"]);
 
     // Both files changed; only a.ts was edited here. b.ts was edited in the
     // other project and must not be claimed by this receipt.

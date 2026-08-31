@@ -41,6 +41,7 @@ import { isWithin } from "./paths.ts";
 /** One line of the transcript. Every field optional: this is a log we do not own. */
 interface Step {
   readonly type?: unknown;
+  readonly source?: unknown;
   readonly created_at?: unknown;
   readonly content?: unknown;
   readonly tool_calls?: unknown;
@@ -101,8 +102,25 @@ const BACKGROUNDED = /^Tool is running as a background task\b/m;
 
 export function outcomeOf(next: Step | undefined): number | undefined {
   if (next === undefined || typeof next.content !== "string") return undefined;
-  if (BACKGROUNDED.test(next.content)) return undefined;
-  const m = EXIT_PROSE.exec(next.content);
+
+  // The developer does not get to state a command's exit status.
+  //
+  // The pairing here is positional, so whatever step follows a call is read for
+  // an outcome -- and if that step is something the person typed, a sentence in
+  // a chat message becomes a signed assertion that the tests passed. Forged test
+  // evidence is the one threat this format claims to close, so the source is
+  // checked rather than assumed. In ten real transcripts a user step never once
+  // followed a tool call in 602 pairs, which is an argument for it being cheap
+  // to forbid, not for leaving it possible.
+  if (next.source === "USER_EXPLICIT" || next.type === "USER_INPUT") return undefined;
+
+  // Nor does a command get to state its own exit status by printing one. The
+  // result step is a short header followed by `Output:` and raw stdout, so only
+  // the header is read: `cat` of a build log that happens to contain the
+  // sentence is output, not an outcome.
+  const header = next.content.split(/\r?\nOutput:/)[0] ?? "";
+  if (BACKGROUNDED.test(header)) return undefined;
+  const m = EXIT_PROSE.exec(header);
   if (m === null) return undefined;
   const code = Number(m[1]);
   return Number.isInteger(code) ? code : undefined;

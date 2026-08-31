@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, existsSync, rmSync
 import { join, resolve as resolvePath } from "node:path";
 import { tmpdir, homedir } from "node:os";
 import { workingTreeEntries, committedEntries, mergeBase, repoRoot, headCommit, rootCommit, git } from "./git.ts";
-import { append, read, journalDir, journalPath, resetSession, recordError, markEmitted, orphanedSessions, journalInsideRepo } from "./journal.ts";
+import { append, read, journalDir, journalPath, resetSession, recordError, markEmitted, orphanedSessions, journalInsideRepo, type JournalEntry } from "./journal.ts";
 import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID, TEST_SHAPES } from "./redact.ts";
 import { buildT0, canonicalJson, checkStatement, isDsseEnvelope, receiptFileName, type Statement } from "./receipt.ts";
 import { changeDigest, canonicalPayload } from "./changedigest.ts";
@@ -155,17 +155,37 @@ function cmdEmit(args: Record<string, string | boolean>): number {
      * in one project could appear as verification evidence for a change in
      * another. Found in a real journal that held a provene session's commands
      * alongside edits to an unrelated analysis directory.
-     *
-     * Known and elsewhere is dropped. Unknown is kept: journals written before
-     * `cwd` existed, and third-party emitters that do not pass `--cwd`, are
-     * not wrong, merely silent, and treating silence as guilt would delete
-     * working evidence from every one of them.
      */
     const here = (e: { cwd?: string }): boolean =>
       e.cwd === undefined || repoRelative(root, e.cwd) !== undefined;
 
+    /**
+     * And what an unrecorded directory is worth.
+     *
+     * This kept the exit code when no directory was recorded, on the grounds
+     * that journals predating the field and emitters that omit `--cwd` are
+     * silent rather than wrong. A reviewer pointed out what silence buys: an
+     * emitter that omits it, running `npm test` in another checkout where it
+     * passes, produces a receipt asserting a passing test run on THIS change.
+     * That is the one claim this format exists to make trustworthy, so it is
+     * not available on an assumption.
+     *
+     * Dropping the command outright would have thrown away real observations
+     * from every existing journal, so neither pole is taken: the command is
+     * recorded, the OUTCOME is not. It ran; we cannot say it ran here; so
+     * nothing derives a verification run from it. This is the same rule the
+     * transcript reader already applies to a command whose directory the log
+     * does not state.
+     */
+    const scoped = (e: JournalEntry): JournalEntry => {
+      if (e.kind !== "command" || e.cwd !== undefined || e.exitCode === undefined) return e;
+      const { exitCode: _dropped, ...rest } = e;
+      return rest;
+    };
+
     const commands = journal
       .filter(here)
+      .map(scoped)
       .filter((e) => e.kind === "command" && e.argv !== undefined)
       .map((e) => redactCommand(e.argv!, salt, {
         ...(e.exitCode !== undefined ? { exitCode: e.exitCode } : {}),

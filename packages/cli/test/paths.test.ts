@@ -70,3 +70,26 @@ test("a transcript cannot attribute a file outside the repository by writing `..
   assert.deepEqual(entries.map((e) => [e.kind, e.path ?? e.argv?.join(" ")]),
     [["edit", "E:\\provene\\src\\a.ts"]]);
 });
+
+test("a drive-relative path is not silently promoted to a drive root", () => {
+  // `C:foo` is relative to the working directory ON drive C, which this
+  // process does not know. Resolving it to `C:/foo` invents an absolute path
+  // and then compares it against a repository root as though it were fact.
+  assert.equal(normalizePath("C:foo"), "C:foo");
+  assert.equal(isWithin("C:foo", "C:/repo", false), false);
+  assert.equal(isWithin("C:foo", "C:/foo", false), false);
+  // A real drive root still is one.
+  assert.equal(isWithin("C:/repo/a.ts", "C:/repo", false), true);
+  assert.equal(normalizePath("E:/"), "E:");
+});
+
+test("a UNC path keeps its host and share", () => {
+  // \\server\share normalised to /server/share loses the host entirely and
+  // collides with a local path of the same spelling.
+  assert.equal(normalizePath("\\\\server\\share\\repo\\a.ts"), "//server/share/repo/a.ts");
+  assert.equal(isWithin("\\\\server\\share\\repo\\a.ts", "\\\\server\\share\\repo", false), true);
+  assert.equal(isWithin("\\\\other\\share\\repo\\a.ts", "\\\\server\\share\\repo", false), false);
+  // The share root is a root: `..` may not climb out of it into another share.
+  assert.equal(normalizePath("//server/share/../../elsewhere/a.ts"), "//server/share/elsewhere/a.ts");
+  assert.equal(isWithin("//server/share/../../other/x", "//server/share/repo", false), false);
+});

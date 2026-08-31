@@ -17,8 +17,20 @@
 /** Separators unified, `.` dropped, `..` resolved, trailing separator removed. */
 export function normalizePath(p: string): string {
   const unified = p.replace(/\\/g, "/");
-  // A leading `/` or a drive letter is the root, and `..` may not climb past it.
-  const rootMatch = /^(\/|[A-Za-z]:\/?)/.exec(unified);
+  // What counts as a root, and what only looks like one.
+  //
+  //   //server/share   UNC. The host and share ARE the root; treating the
+  //                    leading slashes as a plain root turns
+  //                    \\server\share into /server/share and loses the host.
+  //   C:/              a drive root.
+  //   /                the current drive's root.
+  //
+  // `C:foo` is NOT a root. It is relative to the working directory ON drive C,
+  // which this process does not know, so resolving it to `C:/foo` invents an
+  // absolute path -- and then compares it against a repository root as though
+  // it were fact. It is left relative, and a caller that needs a rooted path
+  // rejects it rather than guessing which directory it meant.
+  const rootMatch = /^(\/\/[^/]+\/[^/]+|\/|[A-Za-z]:\/)/.exec(unified);
   const root = rootMatch === null ? "" : rootMatch[0];
   const out: string[] = [];
   for (const seg of unified.slice(root.length).split("/")) {
