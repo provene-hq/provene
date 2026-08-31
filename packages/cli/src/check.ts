@@ -12,7 +12,7 @@ import {
   changedLines, parseLcov, evidenceFor, instrumentedExtensions,
   type FileEvidence,
 } from "./coverage.ts";
-import { checkStatement, type Statement, type Assurance } from "./receipt.ts";
+import { checkStatement, isDsseEnvelope, type Statement, type Assurance } from "./receipt.ts";
 import { matches } from "./glob.ts";
 
 export interface ReceiptSummary {
@@ -45,7 +45,7 @@ export function receiptsInRange(root: string, base: string, head: string): Set<s
   }
 }
 
-export function loadReceipts(root: string): Array<{ file: string; statement: Statement }> {
+export function loadReceipts(root: string): Array<{ file: string; statement: Statement; envelope: boolean }> {
   const dir = join(root, ".provene");
   if (!existsSync(dir)) return [];
   return readdirSync(dir)
@@ -56,7 +56,8 @@ export function loadReceipts(root: string): Array<{ file: string; statement: Sta
       const statement = (parsed["payload"] !== undefined && parsed["_statement_for_readability_only"] !== undefined
         ? parsed["_statement_for_readability_only"]
         : parsed) as Statement;
-      return { file: f, statement };
+      // Carried so the caller can hold a `.dsse.json` name against its contents.
+      return { file: f, statement, envelope: isDsseEnvelope(parsed) };
     });
 }
 
@@ -72,7 +73,16 @@ export function runCheck(opts: {
 
   const inRange = receiptsInRange(opts.root, opts.base, head);
 
-  const receipts = all.map(({ file, statement }) => {
+  const receipts = all.map(({ file, statement, envelope }) => {
+    const claimsSigned = file.endsWith(".dsse.json");
+    if (claimsSigned && !envelope) {
+      return {
+        file, inRange: inRange.has(file),
+        assurance: { kind: "unsigned", declared: "unknown" } as Assurance,
+        ok: false,
+        problems: ["named .dsse.json but is not a DSSE envelope; the filename contradicts the file"],
+      };
+    }
     // The filename declares the encoding (RFC 0001 8): only a .dsse.json is a
     // signed envelope. Passed in rather than read from the document, because a
     // document's claim about its own trustworthiness is not evidence.

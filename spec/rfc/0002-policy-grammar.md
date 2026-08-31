@@ -6,7 +6,7 @@
 | **Version** | 1.0.1-draft |
 | **File** | `.provene/policy.yml` |
 | **Date** | 2026-08-30 |
-| **Depends on** | RFC 0001 v0.1.1 (receipt schema), Threat Model v0.2 (gate modes, T-3, T-4) |
+| **Depends on** | RFC 0001 v0.1.1 (receipt schema), Threat Model v0.3 (gate modes, T-3, T-4) |
 
 ---
 
@@ -49,7 +49,7 @@ A policy that fails to load MUST fail the check, never skip it.
 
 ## 4. Gate modes
 
-`mode` is REQUIRED. It determines when the rules are consulted at all, and it is the single field that decides whether a deployment resists concealment (Threat Model v0.2, T-3).
+`mode` is REQUIRED. It determines when the rules are consulted at all, and it is the single field that decides whether a deployment resists concealment (Threat Model v0.3, T-3).
 
 ### 4.1 `conditional` (default)
 
@@ -169,7 +169,7 @@ rules:
 | `tests: false` | path | Explicitly not required. |
 | `tests.result: PASSED\|WARNED` | path | A run of `kind: test` covering this path reached this result. |
 | `tests.observedBy: ci\|local` | path | Who observed the run. **`ci` is the meaningful setting**: a locally observed run is a claim by the party who wants the merge. |
-| `tests.baseIsMergeBase: true` | path | The run's `baseCommit` equals the pull request's merge base. Defeats replay of evidence gathered against a different base (Threat Model v0.2, T-11). SHOULD be set wherever `tests.result` is required. |
+| `tests.baseIsMergeBase: true` | path | The run's `baseCommit` equals the pull request's merge base. Defeats replay of evidence gathered against a different base (Threat Model v0.3, T-11). SHOULD be set wherever `tests.result` is required. |
 | `checks: [kinds]` | path | Requires runs of these kinds (`lint`, `typecheck`, `build`). |
 | `unverifiedPaths.max: N` | PR | At most N changed paths uncovered by any run. |
 
@@ -180,7 +180,7 @@ rules:
 | `humanApproval: true` | PR | At least one approving review from a user who is not an author of the change. |
 | `agent.allowed: [tools]` | PR | Only these agent tools may appear in receipts. |
 | `model.allowed: [ids]` | PR | Only these models. |
-| `trustRoot.allowed: [kinds]` | PR | Acceptable trust roots. A verifier MUST take this from policy, never from the receipt (Threat Model v0.2, T-9). |
+| `trustRoot.allowed: [kinds]` | PR | Acceptable trust roots. A verifier MUST take this from policy, never from the receipt (Threat Model v0.3, T-9). |
 
 ## 8. Exemptions and enrollment
 
@@ -215,7 +215,7 @@ enrollment:
 
 Two rules are always in effect and MUST be evaluated before the `rules` list.
 
-**`policy-self-protection`** — changes to `.provene/policy.yml`, `.provene/enrolled.yml`, or hook configuration under version control require human approval. Agents have write access to the working tree (Threat Model v0.2, T-4), so a policy that does not protect itself can be edited by the thing it constrains. MAY be disabled explicitly with `implicit: { policySelfProtection: false }`; doing so MUST emit a warning in the check output.
+**`policy-self-protection`** — changes to `.provene/policy.yml`, `.provene/enrolled.yml`, or hook configuration under version control require human approval. Agents have write access to the working tree (Threat Model v0.3, T-4), so a policy that does not protect itself can be edited by the thing it constrains. MAY be disabled explicitly with `implicit: { policySelfProtection: false }`; doing so MUST emit a warning in the check output.
 
 **`receipt-integrity`** — every receipt present MUST validate against RFC 0001, its signature MUST verify where the tier implies one, and its binding MUST match the commit it is attached to. An invalid receipt always blocks, in every mode, and is never merely a warning. A forgeable receipt is worse than no receipt.
 

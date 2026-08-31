@@ -6,7 +6,7 @@ import { tmpdir } from "node:os";
 import { workingTreeEntries, committedEntries, mergeBase, repoRoot, headCommit, rootCommit, git } from "./git.ts";
 import { append, read, journalDir, recordError, markEmitted, orphanedSessions, journalInsideRepo } from "./journal.ts";
 import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID, TEST_SHAPES } from "./redact.ts";
-import { buildT0, canonicalJson, checkStatement, receiptFileName, type Statement } from "./receipt.ts";
+import { buildT0, canonicalJson, checkStatement, isDsseEnvelope, receiptFileName, type Statement } from "./receipt.ts";
 import { changeDigest, canonicalPayload } from "./changedigest.ts";
 import { runCheck, annotations, summary } from "./check.ts";
 import { buildAggregate, AGGREGATE_PREDICATE_TYPE } from "./promote.ts";
@@ -135,7 +135,19 @@ function cmdEmit(args: Record<string, string | boolean>): number {
 function cmdVerify(args: Record<string, string | boolean>): number {
   const file = String(args["_0"] ?? "");
   if (file === "") { out("usage: provene verify <receipt.json> [--against <commit>]"); return 2; }
-  const statement = JSON.parse(readFileSync(file, "utf8")) as Statement;
+  const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  // A `.dsse.json` name asserts a signed envelope. If the file is not one, the
+  // name is wrong and the receipt is malformed -- not quietly downgraded to
+  // unsigned, which would let a forged name pass as an honest mistake.
+  if (file.endsWith(".dsse.json") && !isDsseEnvelope(raw)) {
+    out("provene: receipt failed verification");
+    out("  - named .dsse.json but is not a DSSE envelope (no payload/payloadType/signatures)");
+    out("  - the filename declares the encoding (RFC 0001 §8); this file contradicts its own name");
+    return 1;
+  }
+  const statement = (raw["payload"] !== undefined && raw["_statement_for_readability_only"] !== undefined
+    ? raw["_statement_for_readability_only"]
+    : raw) as Statement;
   // Resolve the ref before comparing: binding.parent holds a commit id, so
   // comparing it against the literal string "HEAD" reported every receipt as
   // rebased.
@@ -253,22 +265,41 @@ function cmdPromote(args: Record<string, string | boolean>): number {
     return 2;
   }
 
+  // With no coverage report, NOTHING is known to have been executed, so every
+  // changed path is unverified. This used to produce `unverifiedPaths: []`,
+  // which reads as "every path is covered" -- and got signed alongside a
+  // PASSED run. RFC 0001 section 6.6: the field lists changed paths no run in
+  // this receipt covers, and with no evidence that is all of them.
   const result = args["coverage"] !== undefined
     ? runCheck({ root, base, head, lcovPath: String(args["coverage"]) })
     : undefined;
-  const unverified = result?.evidence
-    .filter((e) => e.kind === "untested" || (e.kind === "instrumented" && e.covered < e.changed))
-    .map((e) => e.path) ?? [];
+  const unverified = result === undefined
+    ? runCheck({ root, base, head }).changedPaths
+    : result.evidence
+        .filter((e) => e.kind === "untested" || (e.kind === "instrumented" && e.covered < e.changed))
+        .map((e) => e.path);
 
-  const runs = args["test-result"] !== undefined
-    ? [{
-        id: "ci-test",
-        kind: "test" as const,
-        ...(args["test-tool"] !== undefined ? { tool: String(args["test-tool"]) } : {}),
-        result: String(args["test-result"]).toUpperCase() as "PASSED" | "WARNED" | "FAILED",
-        ...(args["run-url"] !== undefined ? { url: String(args["run-url"]) } : {}),
-      }]
-    : [];
+  // RFC 0001 section 6.6 fixes this enum. It was written into the predicate
+  // unchecked, so `--test-result "definitely-passed"` was recorded verbatim and
+  // then SIGNED -- a signed receipt is the last place an unvalidated string
+  // from a workflow file belongs.
+  const RESULTS = ["PASSED", "WARNED", "FAILED"] as const;
+  type CiRun = { id: string; kind: "test"; tool?: string; result: "PASSED" | "WARNED" | "FAILED"; url?: string };
+  let runs: CiRun[] = [];
+  if (args["test-result"] !== undefined) {
+    const result = String(args["test-result"]).toUpperCase();
+    if (!(RESULTS as readonly string[]).includes(result)) {
+      out(`provene promote: --test-result must be one of ${RESULTS.join(", ")}, got ${String(args["test-result"])}`);
+      return 2;
+    }
+    runs = [{
+      id: "ci-test",
+      kind: "test" as const,
+      ...(args["test-tool"] !== undefined ? { tool: String(args["test-tool"]) } : {}),
+      result: result as "PASSED" | "WARNED" | "FAILED",
+      ...(args["run-url"] !== undefined ? { url: String(args["run-url"]) } : {}),
+    }];
+  }
 
   const outPath = args["out"] !== undefined ? String(args["out"]) : undefined;
 
@@ -439,16 +470,18 @@ function cmdVerifyAggregate(args: Record<string, string | boolean>): number {
         for (const id of gh.identities) out(`  signer ${id}`);
         for (const n of c.notes) out(`  note: ${n}`);
       }
-      // gh accepts an attestation signed by ANY workflow in the repository.
-      // A repository that runs an experimental or pull-request-triggered
-      // workflow with id-token: write therefore has more signers than its
-      // maintainers usually think, and the identity above is the only thing
-      // distinguishing them.
-      if (args["signer-workflow"] === undefined && args["cert-identity"] === undefined) {
-        out("  warning: any workflow in this repository was accepted as a signer.");
-        out("           Pass --signer-workflow to require a specific one.");
-      }
       break;
+  }
+  // gh accepts an attestation signed by ANY workflow in the repository, so a
+  // repository that also runs an experimental or pull-request-triggered
+  // workflow with id-token: write has more signers than its maintainers think.
+  // Printed for every outcome that consulted a signature, not only success:
+  // confining it to the passing branch meant the one person who most needed to
+  // widen their constraint -- someone staring at a failure -- never saw it.
+  if (outcome.kind !== "no-verifier" && outcome.kind !== "no-attestation"
+      && args["signer-workflow"] === undefined && args["cert-identity"] === undefined) {
+    out("  note: any workflow in this repository was accepted as a signer.");
+    out("        Pass --signer-workflow owner/name/.github/workflows/<file> to pin one.");
   }
   for (const line of rangeNote(range)) out(line);
   return outcome.code;

@@ -79,6 +79,14 @@ jobs:
       - name: Conformance suite
         run: python3 spec/conformance/runner/run.py
 
+      # An expression in an input description took the whole action offline
+      # once. GitHub evaluates every ${{ }} in a manifest at load time, and the
+      # only place that failure shows up is a run that cannot start.
+      - name: Action manifest is loadable
+        run: |
+          python3 -m pip install --quiet pyyaml
+          python3 spec/conformance/runner/lint_action.py action.yml
+
       # The schema existed from day one and nothing checked emitter output
       # against it, so two defects shipped that the schema itself forbade.
       - name: Emitted receipts satisfy the schema
