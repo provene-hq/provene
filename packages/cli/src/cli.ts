@@ -356,6 +356,14 @@ function cmdVerifyAggregate(args: Record<string, string | boolean>): number {
       out(`  ${gh.message}`);
       return 3;
     }
+    if (gh.noAttestation) {
+      // Absence of evidence, not evidence of forgery.
+      out(`provene: no attestation covers this change set (sha256:${subjectDigest.slice(0, 12)})`);
+      out("  nothing has been signed for it, or this repository's attestations are not visible to you.");
+      out("  A private repository on a free plan cannot store one at all: GitHub's attestation");
+      out("  store is free for public repositories and a paid feature otherwise.");
+      return 1;
+    }
     out("provene: the signature did not verify");
     for (const line of gh.message.split("\n")) if (line.trim() !== "") out(`  ${line.trim()}`);
     out(`  change digest here: sha256:${subjectDigest}`);
