@@ -59,6 +59,7 @@ function commitsInRange(root: string, base: string, head: string): string[] {
   try {
     return execFileSync("git", ["rev-list", "--no-merges", `${base}..${head}`], {
       encoding: "utf8", cwd: root, maxBuffer: 32 * 1024 * 1024,
+      stdio: ["ignore", "pipe", "pipe"],
     }).split("\n").filter((l) => l !== "");
   } catch {
     return [];

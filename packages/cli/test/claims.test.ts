@@ -8,7 +8,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { execFileSync } from "node:child_process";
+import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -149,5 +149,49 @@ test("a merge commit CI generated is not counted against coverage", () => {
     // One commit: the one a person wrote. Not two.
     assert.equal(predicate["coverage"].commitsInRange, 1,
       "the pull-request merge commit must not be counted");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("the first command a new user runs does not look like a crash", () => {
+  // `provene doctor` in a repository with no commits printed a raw
+  // `fatal: ambiguous argument 'HEAD'` from git above its own perfectly clear
+  // "no root commit — commit something first". The first thing this tool ever
+  // showed a new user looked like it had broken.
+  //
+  // Found by installing the published package on a machine that had never seen
+  // this repository and following the README, which no test in here can do.
+  // This is the closest a test can get: nothing may reach stderr that this
+  // tool did not choose to say.
+  const dir = mkdtempSync(join(tmpdir(), "provene-firstrun-"));
+  try {
+    execFileSync("git", ["init", "-q", "."], { cwd: dir, stdio: "ignore" });
+    const r = spawnSync(process.execPath, [CLI, "doctor"], {
+      cwd: dir, encoding: "utf8",
+      env: { ...process.env, PROVENE_HOME: join(dir, "home") },
+    });
+    assert.equal(r.stderr, "", `leaked to stderr:\n${r.stderr}`);
+    // and it still says the useful thing, in its own words
+    assert.match(r.stdout, /no root commit/);
+    assert.doesNotMatch(r.stdout, /fatal:/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test("no command leaks a subprocess's error text to stderr", () => {
+  const dir = mkdtempSync(join(tmpdir(), "provene-stderr-"));
+  try {
+    execFileSync("git", ["init", "-q", "."], { cwd: dir, stdio: "ignore" });
+    const env = { ...process.env, PROVENE_HOME: join(dir, "home") };
+    // Every command, in a repository where most of them cannot succeed.
+    for (const argv of [
+      ["doctor"],
+      ["check", "--base", "HEAD"],
+      ["manifest", "--base", "HEAD"],
+      ["verify", "no-such-file.statement.json"],
+      ["promote", "--base", "HEAD", "--attester", "x", "--out", join(dir, "a.json")],
+      ["emit", "--session", "nothing"],
+    ]) {
+      const r = spawnSync(process.execPath, [CLI, ...argv], { cwd: dir, encoding: "utf8", env });
+      assert.equal(r.stderr, "", `${argv[0]} leaked to stderr:\n${r.stderr}`);
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });

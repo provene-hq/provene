@@ -23,7 +23,8 @@ export function changedLines(base: string, head = "HEAD", cwd?: string): Map<str
   const raw = execFileSync("git", [
     "-c", "core.quotePath=false", "diff", "-U0", "--no-color", "--no-ext-diff",
     "--src-prefix=a/", "--dst-prefix=b/", base, head,
-  ], { encoding: "utf8", cwd: cwd ?? process.cwd(), maxBuffer: 64 * 1024 * 1024 });
+  ], { encoding: "utf8", cwd: cwd ?? process.cwd(), maxBuffer: 64 * 1024 * 1024,
+       stdio: ["ignore", "pipe", "pipe"] });
 
   const out = new Map<string, Set<number>>();
   let path: string | undefined;

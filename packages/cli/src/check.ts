@@ -38,7 +38,8 @@ export function receiptsInRange(root: string, base: string, head: string): Set<s
   try {
     const raw = execFileSync("git", [
       "-c", "core.quotePath=false", "diff", "--name-only", "-z", base, head, "--", ".provene/",
-    ], { encoding: "utf8", cwd: root, maxBuffer: 16 * 1024 * 1024 });
+    ], { encoding: "utf8", cwd: root, maxBuffer: 16 * 1024 * 1024,
+         stdio: ["ignore", "pipe", "pipe"] });
     return new Set(raw.split("\0").filter((f) => f !== "").map((f) => f.replace(/^\.provene\//, "")));
   } catch {
     return new Set();

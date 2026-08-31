@@ -2,11 +2,29 @@
 import { execFileSync } from "node:child_process";
 import type { ChangeEntry, ChangeStatus } from "./changedigest.ts";
 
+/**
+ * Run git and return its stdout.
+ *
+ * `stderr: "pipe"` is not tidiness. Without it git's stderr is inherited and
+ * printed straight at the user, so `provene doctor` in a repository with no
+ * commits -- a brand new repository, the first command a new user runs --
+ * opened with a raw `fatal: ambiguous argument 'HEAD'` above its own perfectly
+ * clear "no root commit — commit something first". The first thing this tool
+ * ever showed a new user looked like a crash.
+ *
+ * Every failure this module can produce is one a caller already handles and
+ * reports in its own words. Captured here, git's text stays available on the
+ * thrown error and is shown to nobody by default.
+ *
+ * Found by installing the published package on a clean machine and following
+ * the README, which is not something any test in this repository can do.
+ */
 export function git(args: readonly string[], cwd?: string): string {
   return execFileSync("git", args as string[], {
     encoding: "utf8",
     cwd: cwd ?? process.cwd(),
     maxBuffer: 64 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
   }).replace(/\n$/, "");
 }
 
@@ -91,6 +109,7 @@ function untrackedEntries(cwd?: string): ChangeEntry[] {
     encoding: "utf8",
     cwd: cwd ?? process.cwd(),
     maxBuffer: 64 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
   });
   const paths = listed.split("\0").filter((f) => f !== "");
   const oids = hashObjects(paths, cwd);
@@ -158,6 +177,7 @@ export function workingTreeEntries(base: string, cwd?: string): ChangeEntry[] {
     encoding: "utf8",
     cwd: cwd ?? process.cwd(),
     maxBuffer: 64 * 1024 * 1024,
+    stdio: ["ignore", "pipe", "pipe"],
   });
   const { pending, needHashing } = parseRaw(raw);
   const hashed = hashObjects(needHashing, cwd);
@@ -229,7 +249,8 @@ export function committedEntries(base: string, head: string, cwd?: string): Chan
   const raw = execFileSync("git", [
     "-c", "core.quotePath=false", "-c", "core.abbrev=no",
     "diff", "--raw", "-M", "-z", base, head,
-  ], { encoding: "utf8", cwd: cwd ?? process.cwd(), maxBuffer: 64 * 1024 * 1024 });
+  ], { encoding: "utf8", cwd: cwd ?? process.cwd(), maxBuffer: 64 * 1024 * 1024,
+       stdio: ["ignore", "pipe", "pipe"] });
   const { pending } = parseRaw(raw);
   // A deletion has no post image; nothing else between two commits can lack a
   // blob object, so an empty postBlob here would be a parse failure rather than

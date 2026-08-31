@@ -135,7 +135,19 @@ function cmdEmit(args: Record<string, string | boolean>): number {
 function cmdVerify(args: Record<string, string | boolean>): number {
   const file = String(args["_0"] ?? "");
   if (file === "") { out("usage: provene verify <receipt.json> [--against <commit>]"); return 2; }
-  const raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  // A missing or malformed file is a thing a person does, not an exception.
+  // This threw ENOENT with a Node stack trace at anyone who mistyped a path.
+  let raw: Record<string, unknown>;
+  try {
+    raw = JSON.parse(readFileSync(file, "utf8")) as Record<string, unknown>;
+  } catch (err) {
+    const e = err as NodeJS.ErrnoException;
+    out(`provene verify: cannot read ${file}`);
+    out(e.code === "ENOENT"
+      ? "  no such file. Receipts live in .provene/ and end .statement.json or .dsse.json"
+      : `  ${err instanceof Error ? err.message : String(err)}`);
+    return 2;
+  }
   // A `.dsse.json` name asserts a signed envelope. If the file is not one, the
   // name is wrong and the receipt is malformed -- not quietly downgraded to
   // unsigned, which would let a forged name pass as an honest mistake.
@@ -201,6 +213,28 @@ function resolveRange(root: string, baseRef: string, headRef: string):
   return { base: mb ?? given, head, fellBack: mb === undefined };
 }
 
+/**
+ * Resolve a range, or explain why not.
+ *
+ * `check` and `verify-aggregate` wrapped `resolveRange` in a try/catch and
+ * `manifest` and `promote` did not, so in a repository with no commits the
+ * first two said "cannot resolve HEAD" and the second two threw a Node stack
+ * trace at the user. Four call sites, two behaviours, no reason for the
+ * difference. Now there is one function and no choice.
+ */
+function resolveRangeOrExplain(
+  command: string, root: string, args: Record<string, string | boolean>,
+): { base: string; head: string; fellBack: boolean } | undefined {
+  const baseRef = String(args["base"] ?? "HEAD");
+  try {
+    return resolveRange(root, baseRef, String(args["head"] ?? "HEAD"));
+  } catch {
+    out(`provene ${command}: cannot resolve ${baseRef}`);
+    out("  a repository with no commits has nothing to diff; commit something first");
+    return undefined;
+  }
+}
+
 const rangeNote = (r: { fellBack: boolean }): string[] =>
   r.fellBack
     ? ["  note: no merge base could be computed (a shallow clone cannot), so this is a",
@@ -212,10 +246,8 @@ function cmdCheck(args: Record<string, string | boolean>): number {
   let root: string;
   try { root = repoRoot(); } catch { out("provene check: not inside a git repository"); return 2; }
 
-  const baseRef = String(args["base"] ?? "HEAD");
-  let range: { base: string; head: string; fellBack: boolean };
-  try { range = resolveRange(root, baseRef, String(args["head"] ?? "HEAD")); }
-  catch { out(`provene check: cannot resolve ${baseRef}`); return 2; }
+  const range = resolveRangeOrExplain("check", root, args);
+  if (range === undefined) return 2;
   const base = range.base;
 
   const result = runCheck({
@@ -255,7 +287,8 @@ function cmdPromote(args: Record<string, string | boolean>): number {
   let root: string;
   try { root = repoRoot(); } catch { out("provene promote: not inside a git repository"); return 2; }
 
-  const range = resolveRange(root, String(args["base"] ?? "HEAD"), String(args["head"] ?? "HEAD"));
+  const range = resolveRangeOrExplain("promote", root, args);
+  if (range === undefined) return 2;
   const base = range.base;
   const head = range.head;
 
@@ -357,7 +390,8 @@ function cmdPromote(args: Record<string, string | boolean>): number {
 function cmdManifest(args: Record<string, string | boolean>): number {
   let root: string;
   try { root = repoRoot(); } catch { out("provene manifest: not inside a git repository"); return 2; }
-  const range = resolveRange(root, String(args["base"] ?? "HEAD"), String(args["head"] ?? "HEAD"));
+  const range = resolveRangeOrExplain("manifest", root, args);
+  if (range === undefined) return 2;
   // Committed state only. The manifest exists so a third party can reproduce
   // what was signed from a checkout; uncommitted work is by definition not in
   // any checkout they can obtain.
@@ -396,9 +430,8 @@ function cmdVerifyAggregate(args: Record<string, string | boolean>): number {
     return 2;
   }
 
-  let range: { base: string; head: string; fellBack: boolean };
-  try { range = resolveRange(root, String(args["base"] ?? "HEAD"), String(args["head"] ?? "HEAD")); }
-  catch { out(`provene verify-aggregate: cannot resolve ${String(args["base"] ?? "HEAD")}`); return 2; }
+  const range = resolveRangeOrExplain("verify-aggregate", root, args);
+  if (range === undefined) return 2;
   const base = range.base;
 
   const entries = committedEntries(base, range.head, root);
