@@ -130,3 +130,72 @@ test("a non-integer exit code is refused rather than silently dropped", () => {
     assert.match(r.stdout, /--exit must be an integer/);
   } finally { rmSync(join(repo, ".."), { recursive: true, force: true }); }
 });
+
+/**
+ * A session is not a repository.
+ *
+ * The journal is keyed by session, and one agent session is free to work in
+ * several projects. Every command it ran anywhere was being written into
+ * whichever repository `emit` happened to run in, so a suite that passed in one
+ * project could appear as verification evidence for a change in another. Found
+ * in a real journal: a provene session's commands sat alongside edits to an
+ * unrelated analysis directory on another drive.
+ */
+test("a command run in another repository is not evidence about this one", () => {
+  const dir = mkdtempSync(join(tmpdir(), "provene-scope-"));
+  try {
+    const repo = join(dir, "here");
+    const other = join(dir, "elsewhere");
+    mkdirSync(repo, { recursive: true });
+    mkdirSync(other, { recursive: true });
+    const git = (...a: string[]): void => { execFileSync("git", a, { cwd: repo, stdio: "ignore" }); };
+    git("init", "-q", ".");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    writeFileSync(join(repo, "a.ts"), "export const a = 1;\n", "utf8");
+    writeFileSync(join(repo, "b.ts"), "export const b = 1;\n", "utf8");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    // Both change. Only one of them was edited by the agent IN THIS REPOSITORY.
+    writeFileSync(join(repo, "a.ts"), "export const a = 2;\n", "utf8");
+    writeFileSync(join(repo, "b.ts"), "export const b = 2;\n", "utf8");
+
+    const home = join(dir, "home");
+    const env = { ...process.env, PROVENE_HOME: home };
+    const record = (argv: string[]): void => {
+      const r = spawnSync(process.execPath, [CLI, "record", "--session", "s", ...argv],
+        { cwd: repo, encoding: "utf8", env });
+      assert.equal(r.status, 0, r.stdout);
+    };
+    // Here, elsewhere, and one from an emitter that does not pass --cwd.
+    record(["--kind", "command", "--argv", "npm test", "--exit", "0", "--cwd", repo]);
+    record(["--kind", "command", "--argv", "pytest", "--exit", "0", "--cwd", other]);
+    record(["--kind", "command", "--argv", "cargo test", "--exit", "0"]);
+    // Two relative edits. `b.ts` exists in both projects and changed in this
+    // one, so an unresolved relative path would silently attribute the other
+    // project's edit to this repository's file -- the same six characters,
+    // a different file.
+    record(["--kind", "edit", "--path", "a.ts", "--cwd", repo]);
+    record(["--kind", "edit", "--path", "b.ts", "--cwd", other]);
+
+    const e = spawnSync(process.execPath, [CLI, "emit", "--session", "s", "--tool", "t"],
+      { cwd: repo, encoding: "utf8", env });
+    assert.equal(e.status, 0, e.stdout);
+    const file = join(repo, ".provene", readdirSync(join(repo, ".provene"))[0]!);
+    const pred = (JSON.parse(readFileSync(file, "utf8")) as { predicate: Record<string, unknown> }).predicate;
+    const shapes = (pred["commands"] as Array<{ shape?: string }>).map((c) => c.shape);
+
+    assert.ok(shapes.includes("npm test"), "the command run here was dropped");
+    assert.ok(!shapes.includes("pytest"), "a command run elsewhere became evidence about this change");
+    // Unknown is not guilty: an emitter that passes no --cwd is silent, not
+    // wrong, and dropping its evidence would break every existing journal.
+    assert.ok(shapes.includes("cargo test"), "a command with no recorded directory was dropped");
+
+    const runs = pred["verification"] as { runs: Array<{ tool: string }> };
+    assert.deepEqual(runs.runs.map((r) => r.tool).sort(), ["cargo", "npm"]);
+
+    // Both files changed; only a.ts was edited here. b.ts was edited in the
+    // other project and must not be claimed by this receipt.
+    assert.match(e.stdout, /1 of 2 changed path\(s\) attributed/, e.stdout);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});

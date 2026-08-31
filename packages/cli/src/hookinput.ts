@@ -58,12 +58,15 @@ export function claudeEntries(p: HookPayload): JournalEntry[] {
   const at = new Date().toISOString();
   const tool = p.tool_name ?? "";
   const input = p.tool_input ?? {};
+  // Both agents send it, and it is what scopes a session's evidence to a
+  // repository. See JournalEntry.cwd.
+  const where = typeof p.cwd === "string" && p.cwd !== "" ? { cwd: p.cwd } : {};
 
   if (EDIT_TOOLS.has(tool)) {
     const path = typeof input["file_path"] === "string" ? input["file_path"]
                : typeof input["notebook_path"] === "string" ? input["notebook_path"]
                : undefined;
-    return path === undefined ? [] : [{ at, kind: "edit", path }];
+    return path === undefined ? [] : [{ at, kind: "edit", path, ...where }];
   }
 
   if (tool === "Bash") {
@@ -79,10 +82,10 @@ export function claudeEntries(p: HookPayload): JournalEntry[] {
     // of the two.
     const response = typeof p.tool_response === "string" ? p.tool_response : "";
     const contradicted = !failed && /\bexit(?: code)? [1-9]\d*\b|\berror\b/i.test(response);
-    if (contradicted) return [{ at, kind: "command", argv: command.split(/\s+/) }];
+    if (contradicted) return [{ at, kind: "command", argv: command.split(/\s+/), ...where }];
     // The journal holds the raw command; it lives outside the repository and is
     // never committed. Redaction happens when the receipt is built (RFC 0001 10).
-    return [{ at, kind: "command", argv: command.split(/\s+/), exitCode: failed ? 1 : 0 }];
+    return [{ at, kind: "command", argv: command.split(/\s+/), exitCode: failed ? 1 : 0, ...where }];
   }
 
   return [];
@@ -117,10 +120,11 @@ export function geminiEntries(p: HookPayload): JournalEntry[] {
   const at = new Date().toISOString();
   const tool = p.tool_name ?? "";
   const input = p.tool_input ?? {};
+  const where = typeof p.cwd === "string" && p.cwd !== "" ? { cwd: p.cwd } : {};
 
   if (GEMINI_EDIT_TOOLS.has(tool)) {
     const path = input["file_path"];
-    return typeof path === "string" && path !== "" ? [{ at, kind: "edit", path }] : [];
+    return typeof path === "string" && path !== "" ? [{ at, kind: "edit", path, ...where }] : [];
   }
 
   if (tool === "run_shell_command") {
@@ -130,18 +134,18 @@ export function geminiEntries(p: HookPayload): JournalEntry[] {
     // A background command has not finished, so its absent error means nothing
     // yet. Recording it as a pass would turn "we did not wait" into "it worked".
     if (input["is_background"] === true) {
-      return [{ at, kind: "command", argv: command.trim().split(/\s+/) }];
+      return [{ at, kind: "command", argv: command.trim().split(/\s+/), ...where }];
     }
 
     const response = p.tool_response;
     if (typeof response !== "object" || response === null) {
       // The documented field is missing, so the documented reading does not
       // apply. Record that the command ran and claim nothing about its outcome.
-      return [{ at, kind: "command", argv: command.trim().split(/\s+/) }];
+      return [{ at, kind: "command", argv: command.trim().split(/\s+/), ...where }];
     }
     const error = (response as Record<string, unknown>)["error"];
     const failed = error !== undefined && error !== null && error !== "";
-    return [{ at, kind: "command", argv: command.trim().split(/\s+/), exitCode: failed ? 1 : 0 }];
+    return [{ at, kind: "command", argv: command.trim().split(/\s+/), exitCode: failed ? 1 : 0, ...where }];
   }
 
   return [];

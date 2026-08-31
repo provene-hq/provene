@@ -55,6 +55,13 @@ function agentOrExplain(
   return agent;
 }
 
+/** A path made absolute against the directory it was recorded in, where both are known. */
+function absoluteish(cwd: string | undefined, path: string): string {
+  const rooted = /^([A-Za-z]:[\\/]|[\\/])/.test(path);
+  if (rooted || cwd === undefined || cwd === "") return path;
+  return `${cwd.replace(/[\\/]+$/, "")}/${path}`;
+}
+
 /**
  * A journal path expressed the way git expresses it, or nothing.
  *
@@ -135,7 +142,27 @@ function cmdEmit(args: Record<string, string | boolean>): number {
 
     const salt = deriveSalt(rootCommit());
     const journal = read(sessionId);
+
+    /**
+     * Did this happen here?
+     *
+     * A journal belongs to a session, not to a repository, and a session may
+     * work in several. Every command in the journal was being recorded into
+     * whichever repository `emit` happened to run in -- so a suite that passed
+     * in one project could appear as verification evidence for a change in
+     * another. Found in a real journal that held a provene session's commands
+     * alongside edits to an unrelated analysis directory.
+     *
+     * Known and elsewhere is dropped. Unknown is kept: journals written before
+     * `cwd` existed, and third-party emitters that do not pass `--cwd`, are
+     * not wrong, merely silent, and treating silence as guilt would delete
+     * working evidence from every one of them.
+     */
+    const here = (e: { cwd?: string }): boolean =>
+      e.cwd === undefined || repoRelative(root, e.cwd) !== undefined;
+
     const commands = journal
+      .filter(here)
       .filter((e) => e.kind === "command" && e.argv !== undefined)
       .map((e) => redactCommand(e.argv!, salt, {
         ...(e.exitCode !== undefined ? { exitCode: e.exitCode } : {}),
@@ -162,9 +189,14 @@ function cmdEmit(args: Record<string, string | boolean>): number {
 
     const attributedPaths = [...new Set(
       journal
+        .filter(here)
         .filter((e) => e.kind === "edit" && e.path !== undefined)
-        .map((e) => repoRelative(root, e.path!))
-        .filter((p): p is string => p !== undefined),
+        // A relative path is relative to where the agent was. `src/a.ts` in one
+        // project and `src/a.ts` in another are the same six characters and
+        // different files, so it is resolved against the recorded directory
+        // before being tested against this repository.
+        .map((e) => repoRelative(root, absoluteish(e.cwd, e.path!)))
+        .filter((p): p is string => p !== undefined && p !== ""),
     )];
     const task = args["task"] !== undefined
       ? { ref: String(args["task"]), digest: keyedDigest(salt, String(args["task"])) }
@@ -781,6 +813,9 @@ function cmdRecord(args: Record<string, string | boolean>): number {
     append(sessionId, {
       at: new Date().toISOString(), kind,
       ...(args["path"] !== undefined ? { path: String(args["path"]) } : {}),
+      // Optional, and worth supplying: it is what keeps a session that worked
+      // in two repositories from reporting one's test run as the other's.
+      ...(args["cwd"] !== undefined ? { cwd: String(args["cwd"]) } : {}),
       // Split on whitespace, not a single space, so `npm  test` and a tab do
       // not produce empty argv entries that reach the redactor.
       ...(args["argv"] !== undefined ? { argv: String(args["argv"]).trim().split(/\s+/) } : {}),
@@ -1031,7 +1066,7 @@ function usage(): void {
   out("  provene import --agent antigravity --session <id>      import a session that fired no hooks");
   out("  provene record --stdin                                 append a Claude Code hook payload");
   out("  provene record --session <id> --kind <k> [--path <p>]  append from any other agent");
-  out("                 [--argv <cmd>] [--exit <n>]");
+  out("                 [--argv <cmd>] [--exit <n>] [--cwd <dir>]");
   out("  provene emit   --session <id> [--base <commit>]        write a T0 receipt");
   out("                 [--tool <t>] [--vendor <v>] [--model <m>]");
   out("  provene verify <receipt> [--against <commit>]          check integrity, report tier");
@@ -1062,7 +1097,7 @@ const FLAGS: Readonly<Record<string, readonly string[]>> = {
   init: ["agent", "settings", "dry-run"],
   import: ["agent", "session", "transcript", "replace", "dry-run"],
   doctor: ["agent", "settings"],
-  record: ["stdin", "agent", "session", "kind", "path", "argv", "exit", "duration-ms"],
+  record: ["stdin", "agent", "session", "kind", "path", "argv", "cwd", "exit", "duration-ms"],
   emit: ["stdin", "agent", "quiet", "session", "base", "subject", "task",
          "tool", "vendor", "tool-version", "model", "model-source"],
   verify: ["against", "base", "head"],

@@ -17,6 +17,18 @@ export interface JournalEntry {
   readonly at: string;
   readonly kind: "edit" | "command" | "test" | "note";
   readonly path?: string;
+  /**
+   * Where the agent was when this happened.
+   *
+   * A journal belongs to a SESSION, not to a repository, and a session is free
+   * to work in more than one. Without this, `emit` in repository A recorded
+   * every command the session ran anywhere -- including a test suite that
+   * passed in repository B, as evidence about A. Optional because journals
+   * written before this field existed, and third-party emitters that do not
+   * supply it, must keep working: absent means unknown, and unknown is not
+   * filtered. Known-and-elsewhere is.
+   */
+  readonly cwd?: string;
   readonly argv?: readonly string[];
   readonly exitCode?: number;
   readonly durationMs?: number;

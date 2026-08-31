@@ -13,13 +13,15 @@ Two things, and nothing more.
 **1. Report events as they happen.** Every time the agent edits a file or runs a command, append to the session journal:
 
 ```sh
-provene record --session <id> --kind edit    --path src/auth.ts
-provene record --session <id> --kind command --argv "npm test" --exit 0 --duration-ms 4200
+provene record --session <id> --kind edit    --path src/auth.ts --cwd /repo
+provene record --session <id> --kind command --argv "npm test" --exit 0 --duration-ms 4200 --cwd /repo
 ```
 
 `--session` is any stable string for the life of one agent session. It must not contain a path separator; anything unusual is replaced with a hash of itself rather than rejected, so a strange id costs you nothing.
 
 `record` never fails. It exits 0 whatever happens, because an emitter that can break the agent it observes will be uninstalled within a day.
+
+**Pass `--cwd`.** A journal belongs to a session, not to a repository, and a session is free to work in more than one. Without it, a test suite that passed in one project can turn up as verification evidence for a change in another, and `src/a.ts` in two checkouts is the same six characters and a different file. `emit` drops anything whose recorded directory is outside the repository it is emitting for. It is optional and treated as unknown-not-guilty when absent, so an emitter that omits it still works exactly as before — but "still works" here means "still over-claims".
 
 **2. Emit once, at the end.**
 
@@ -41,6 +43,7 @@ That is the whole interface.
 | `--tool-version` | `agent.toolVersion` | You can read your own version |
 | `--model` | `agent.model` | The runtime told you, or your config names it |
 | `--model-source` | `agent.modelSource` | `reported` if the runtime told you, `configured` if you read it from settings |
+| `--cwd` | scoping, not a receipt field | Always, on every `record`. See above |
 
 **Do not guess the model.** `modelSource` exists so a reader can tell how the identifier was obtained, and an emitter that infers one from a version string or a default has made the field worthless for everybody. Recording no model is a correct receipt. Claude Code's own hook payload carries no model, so this is the normal case rather than the exception.
 

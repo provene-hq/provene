@@ -220,7 +220,9 @@ export function antigravityEntries(steps: readonly Step[], options: TranscriptOp
         // outside every repository.
         const argv = command.trim().split(/\s+/);
         const exitCode = ambiguous || !scoped ? undefined : outcomeOf(steps[i + 1]);
-        entries.push({ at, kind: "command", argv, ...(exitCode !== undefined ? { exitCode } : {}) });
+        entries.push({ at, kind: "command", argv,
+          ...(cwd !== undefined ? { cwd } : {}),
+          ...(exitCode !== undefined ? { exitCode } : {}) });
       }
     }
   }
