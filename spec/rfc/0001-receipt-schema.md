@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.1.8 |
+| **Version** | 0.1.9 |
 | **Predicate type** | `https://provene.dev/attestation/code-change/v0.1` |
 | **Date** | 2026-08-31 |
 | **Supersedes** | — |
@@ -81,6 +81,8 @@ An implementation MUST be able to write the manifest to a file containing exactl
 **Rationale.** Without the manifest, a Provene subject digest is unaddressable by any tool but Provene. General-purpose attestation verifiers — `gh attestation verify`, `cosign` — take an *artefact*, hash it, and look up attestations for that hash; a digest over a change set matches no file in the tree, so no such verifier can find the attestation at all. Naming the pre-image as an artefact makes a Provene attestation verifiable with stock tooling, which matters more than any convenience: a receipt that only its own issuer can check is not portable evidence, and portability is the entire claim of this project.
 
 The manifest is reproducible from any checkout of the post-session tree, which is what makes it a binding rather than a hint: a verifier regenerates it from the repository, and equality of the regenerated digest with the signed subject digest is what establishes that the signature covers the work in front of them.
+
+**A verifier MUST regenerate the manifest from the repository it is verifying.** Running a general-purpose attestation verifier against a manifest file it was *given* establishes only that that file was attested; it says nothing about the repository in front of the verifier, because the file did not come from it. Regeneration is the entire binding. An implementation that offers to verify a supplied manifest MUST say so in the same breath.
 
 ### 4.2 Verifying the binding against a commit
 
@@ -397,6 +399,7 @@ Marked for external review; none block a reference implementation.
 
 ## Changelog
 
+- **0.1.9** (2026-08-31) — §4.1.1 gains the requirement that a verifier regenerate the manifest rather than verify a supplied one, after a reviewer identified it as the format's only residual footgun. The tool made the mistake structurally impossible in its own path before the specification said so, which is the wrong order.
 - **0.1.8** (2026-08-31) — range semantics made normative (§4.2.1) and aggregates restricted to committed state (§9). Both from a round-6 review finding, both demonstrated by experiment before being adopted: a two-dot diff against an advanced base branch records that branch's commits as deletions by the author under review, and `promote` was diffing CI's working tree, so a build step's coverage output and an npm-rewritten lockfile entered the signed digest. Neither was a corner case; the second was live in this repository's own workflow.
 - **0.1.7** (2026-08-31) — the changeset manifest named as a normative artefact (§4.1.1). The digest's pre-image already existed in every implementation; what was missing was the requirement that it be writable as a file, without which no general-purpose attestation verifier can address a Provene subject digest, because it corresponds to no file in the tree. Found when building verification for the first signed aggregate: we could produce T2 and could not check one.
 - **0.1.6** (2026-08-31) — aggregate receipts given a schema and a storage rule. They had been specified in §9 since v0.1.0 with neither, which the schema round-trip harness reported on its first run. `sigstore-github` added as a trust root for the case where the platform, not the signer, selects the Sigstore instance.

@@ -10,7 +10,7 @@ import { buildT0, canonicalJson, checkStatement, receiptFileName, type Statement
 import { changeDigest, canonicalPayload } from "./changedigest.ts";
 import { runCheck, annotations, summary } from "./check.ts";
 import { buildAggregate, AGGREGATE_PREDICATE_TYPE } from "./promote.ts";
-import { writeManifest, ghVerify, checkAggregate } from "./attestation.ts";
+import { writeManifest, ghVerify, checkAggregate, decideVerification } from "./attestation.ts";
 import { readStdin, parsePayload, toJournalEntries } from "./hookinput.ts";
 import {
   userSettingsPath, readSettings, withProveneHooks, writeSettings,
@@ -384,60 +384,74 @@ function cmdVerifyAggregate(args: Record<string, string | boolean>): number {
     cwd: root,
   });
 
-  if (!gh.verified) {
-    // Three outcomes, not two. "Could not check" is not "failed", and neither
-    // is "passed"; reporting the first as either is how a verification tool
-    // starts lying.
-    if (!gh.ran) {
-      out("provene: could not verify — no verifier available");
-      out(`  ${gh.message}`);
-      return 3;
-    }
-    if (gh.noAttestation) {
-      // Absence of evidence, not evidence of forgery.
-      out(`provene: no attestation covers this change set (sha256:${subjectDigest.slice(0, 12)})`);
-      out("  nothing has been signed for it, or this repository's attestations are not visible to you.");
-      out("  A private repository on a free plan cannot store one at all: GitHub's attestation");
-      out("  store is free for public repositories and a paid feature otherwise.");
-      return 1;
-    }
-    out("provene: the signature did not verify");
-    for (const line of gh.message.split("\n")) if (line.trim() !== "") out(`  ${line.trim()}`);
-    out(`  change digest here: sha256:${subjectDigest}`);
-    return 1;
-  }
-
-  if (gh.statements.length === 0) {
-    // gh said yes. We simply could not read the detail back, which costs us the
-    // binding check but must not be reported as a pass of it.
-    out(`provene: signature verified by gh for sha256:${subjectDigest}`);
-    out("  gh returned no statement this version could parse, so the predicate's own");
-    out("  claims were NOT checked. The signature does cover this change set.");
-    return 0;
-  }
-
   const commits = (() => {
     try { return git(["rev-list", `${base}..${range.head}`], root).split("\n").filter((l) => l !== "").length; }
     catch { return undefined; }
   })();
 
-  let failed = false;
-  for (const statement of gh.statements) {
-    const r = checkAggregate(statement, {
-      subjectDigest, base,
-      ...(commits !== undefined ? { commitsInRange: commits } : {}),
-    });
-    if (r.ok) {
-      out(`provene: verified ${r.tier} aggregate · sha256:${subjectDigest.slice(0, 12)} · ${repo}`);
-      for (const id of gh.identities) out(`  signer ${id}`);
-      for (const n of r.notes) out(`  note: ${n}`);
-    } else {
-      failed = true;
+  const checks = gh.statements.map((statement) => checkAggregate(statement, {
+    subjectDigest, base,
+    signerIdentities: gh.identities,
+    ...(commits !== undefined ? { commitsInRange: commits } : {}),
+  }));
+
+  // The verdict is computed as data, in one place, before anything is printed.
+  // Deciding inline while printing is what produced a branch whose text said
+  // "the predicate's own claims were NOT checked" above a `return 0`.
+  const outcome = decideVerification(gh, checks);
+
+  switch (outcome.kind) {
+    case "no-verifier":
+      out("provene: could not verify — no verifier available");
+      out(`  ${gh.message}`);
+      break;
+
+    case "no-attestation":
+      // Absence of evidence, not evidence of forgery.
+      out(`provene: no attestation covers this change set (sha256:${subjectDigest.slice(0, 12)})`);
+      out("  nothing has been signed for it, or this repository's attestations are not visible to you.");
+      out("  A private repository on a free plan cannot store one at all: GitHub's attestation");
+      out("  store is free for public repositories and a paid feature otherwise.");
+      break;
+
+    case "signature-invalid":
+      out("provene: the signature did not verify");
+      for (const line of gh.message.split("\n")) if (line.trim() !== "") out(`  ${line.trim()}`);
+      out(`  change digest here: sha256:${subjectDigest}`);
+      break;
+
+    case "unreadable":
+      out("provene: could not verify — the verifier accepted the signature and this");
+      out("  version could not read back what was signed, so nothing has been checked");
+      out("  against your repository. With --bundle the verifier does not compare the");
+      out("  subject digest at all, so a valid signature over an unrelated change set");
+      out("  reaches exactly this branch. Treated as unchecked, not as a pass.");
+      break;
+
+    case "not-this-change":
       out("provene: the signature is valid, but what it signed is not this change");
-      for (const p of r.problems) out(`  - ${p}`);
-    }
+      for (const c of checks) for (const p of c.problems) out(`  - ${p}`);
+      break;
+
+    case "verified":
+      for (const c of checks) {
+        out(`provene: verified ${c.tier} aggregate · sha256:${subjectDigest.slice(0, 12)} · ${repo}`);
+        for (const id of gh.identities) out(`  signer ${id}`);
+        for (const n of c.notes) out(`  note: ${n}`);
+      }
+      // gh accepts an attestation signed by ANY workflow in the repository.
+      // A repository that runs an experimental or pull-request-triggered
+      // workflow with id-token: write therefore has more signers than its
+      // maintainers usually think, and the identity above is the only thing
+      // distinguishing them.
+      if (args["signer-workflow"] === undefined && args["cert-identity"] === undefined) {
+        out("  warning: any workflow in this repository was accepted as a signer.");
+        out("           Pass --signer-workflow to require a specific one.");
+      }
+      break;
   }
-  return failed ? 1 : 0;
+  for (const line of rangeNote(range)) out(line);
+  return outcome.code;
 }
 
 function cmdDoctor(): number {

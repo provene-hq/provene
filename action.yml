@@ -225,13 +225,21 @@ runs:
       env:
         PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
       run: |
+        # Without this constraint, `gh attestation verify` accepts an attestation
+        # signed by ANY workflow in the repository -- so a repository that also
+        # runs an experimental or pull-request-triggered workflow with
+        # id-token: write has more signers than its maintainers think. gh
+        # prepends the host and anchors the match, so the value is the workflow
+        # ref with its @ref suffix removed.
+        SIGNER_WORKFLOW="${GITHUB_WORKFLOW_REF%%@*}"
         {
           echo
           echo "**Signed T2 aggregate:** [${{ steps.attest.outputs.attestation-id }}](${{ steps.attest.outputs.attestation-url }})"
           echo
           echo "Verify it from a checkout of \`${{ github.sha }}\`:"
           echo '```'
-          echo "provene verify-aggregate --repo ${{ github.repository }} --base ${PROVENE_BASE}"
+          echo "provene verify-aggregate --repo ${{ github.repository }} \\"
+          echo "  --base ${PROVENE_BASE} --signer-workflow ${SIGNER_WORKFLOW}"
           echo '```'
           echo "That recomputes the change set locally and hands it to \`gh attestation verify\`;"
           echo "the signature is checked by gh, and provene checks that what was signed is"
@@ -239,7 +247,12 @@ runs:
           echo '```'
           echo "provene manifest --base ${PROVENE_BASE} --out changeset"
           echo "gh attestation verify changeset --repo ${{ github.repository }} \\"
-          echo "  --predicate-type ${{ steps.promote.outputs.predicate-type }}"
+          echo "  --predicate-type ${{ steps.promote.outputs.predicate-type }} \\"
+          echo "  --signer-workflow ${SIGNER_WORKFLOW}"
           echo '```'
+          echo
+          echo "Regenerate the manifest; never verify one you were sent. Verifying a"
+          echo "supplied manifest proves only that that file was attested, not that"
+          echo "this repository matches it."
         } >> "$GITHUB_STEP_SUMMARY"
         echo "provene: signed T2 aggregate ${{ steps.attest.outputs.attestation-id }}"

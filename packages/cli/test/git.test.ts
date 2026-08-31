@@ -56,8 +56,12 @@ test("repoRoot and headCommit report this repository, not the process cwd", () =
   try {
     const head = seed(r);
     assert.equal(headCommit(r.dir), head);
-    // macOS puts tmpdir behind /private, so compare basenames rather than paths.
-    assert.equal(repoRoot(r.dir).split("/").pop(), r.dir.split("/").pop());
+    // Compare basenames, not paths: macOS puts tmpdir behind /private, and git
+    // reports forward slashes on Windows while mkdtempSync returns backslashes.
+    // Splitting on "/" alone passed here and failed on the platform this is
+    // developed on -- found by a reviewer running the suite on Windows.
+    const leaf = (p: string): string => p.replace(/\\/g, "/").split("/").filter(Boolean).pop();
+    assert.equal(leaf(repoRoot(r.dir)), leaf(r.dir));
   } finally { rmSync(r.dir, { recursive: true, force: true }); }
 });
 
