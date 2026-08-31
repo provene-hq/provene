@@ -1,10 +1,10 @@
 #!/usr/bin/env node
 /** provene — portable, signed evidence receipts for AI-generated code changes. */
 import { readFileSync, writeFileSync, mkdirSync, mkdtempSync, existsSync, rmSync, readdirSync } from "node:fs";
-import { join } from "node:path";
-import { tmpdir } from "node:os";
+import { join, resolve as resolvePath } from "node:path";
+import { tmpdir, homedir } from "node:os";
 import { workingTreeEntries, committedEntries, mergeBase, repoRoot, headCommit, rootCommit, git } from "./git.ts";
-import { append, read, journalDir, recordError, markEmitted, orphanedSessions, journalInsideRepo } from "./journal.ts";
+import { append, read, journalDir, journalPath, resetSession, recordError, markEmitted, orphanedSessions, journalInsideRepo } from "./journal.ts";
 import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID, TEST_SHAPES } from "./redact.ts";
 import { buildT0, canonicalJson, checkStatement, isDsseEnvelope, receiptFileName, type Statement } from "./receipt.ts";
 import { changeDigest, canonicalPayload } from "./changedigest.ts";
@@ -12,7 +12,8 @@ import { runCheck, annotations, summary } from "./check.ts";
 import { buildAggregate, AGGREGATE_PREDICATE_TYPE } from "./promote.ts";
 import { writeManifest, ghVerify, checkAggregate, decideVerification } from "./attestation.ts";
 import { readStdin, parsePayload, sessionIdOf } from "./hookinput.ts";
-import { resolveAgent, agentNames, type AgentAdapter } from "./agents.ts";
+import { resolveAgent, agentNames, hookAgents, type AgentAdapter } from "./agents.ts";
+import { readTranscript, antigravityEntries } from "./antigravity.ts";
 import {
   userSettingsPath, readSettings, withProveneHooks, writeSettings,
   proveneHooksInstalled, hookCommand,
@@ -42,6 +43,25 @@ function agentOrExplain(command: string, args: Record<string, string | boolean>)
     out("  any other agent integrates through the flags in spec/emitters.md");
   }
   return agent;
+}
+
+/**
+ * A journal path expressed the way git expresses it, or nothing.
+ *
+ * Hooks report absolute paths, in the platform's own spelling: `E:\\provene\\a.ts`
+ * on Windows against git's `a.ts`. Comparing the two without this returns zero
+ * matches every time and looks exactly like an agent that edited nothing.
+ */
+function repoRelative(root: string, path: string): string | undefined {
+  const norm = (p: string): string => p.replace(/\\/g, "/").replace(/\/+$/, "");
+  const a = norm(path);
+  const b = norm(root);
+  const [ca, cb] = process.platform === "win32" ? [a.toLowerCase(), b.toLowerCase()] : [a, b];
+  if (ca === cb) return "";
+  if (ca.startsWith(cb + "/")) return a.slice(b.length + 1);
+  // Already relative, or somewhere else entirely. A path that is not under the
+  // root is not part of this change and is dropped rather than recorded raw.
+  return a.includes(":") || a.startsWith("/") ? undefined : a;
 }
 
 function cmdEmit(args: Record<string, string | boolean>): number {
@@ -115,7 +135,10 @@ function cmdEmit(args: Record<string, string | boolean>): number {
         : []);
 
     const attributedPaths = [...new Set(
-      journal.filter((e) => e.kind === "edit" && e.path !== undefined).map((e) => e.path!),
+      journal
+        .filter((e) => e.kind === "edit" && e.path !== undefined)
+        .map((e) => repoRelative(root, e.path!))
+        .filter((p): p is string => p !== undefined),
     )];
     const task = args["task"] !== undefined
       ? { ref: String(args["task"]), digest: keyedDigest(salt, String(args["task"])) }
@@ -167,6 +190,23 @@ function cmdEmit(args: Record<string, string | boolean>): number {
           `(observedBy: local — satisfies no policy on its own)`);
     }
     if (unverified.length > 0) say(`  ${unverified.length} path(s) with no verification evidence`);
+    // How much of this change the session actually accounts for.
+    //
+    // `changes.files` is the whole diff, and it always was -- the receipt binds
+    // a changeset, not an authorship claim. But the journal knows which of
+    // those files the agent touched, and until now that was computed and then
+    // dropped on the floor. It matters most for an agent whose session is
+    // imported by hand rather than closed by a hook, because the working tree
+    // can hold a great deal the agent never saw.
+    //
+    // Reported, not recorded: putting it in the receipt means a new field, and
+    // RFC 0001 section 6.4 is changed by RFC, not by an emitter that felt like
+    // saying more.
+    const changedPaths = new Set(entries.map((e) => e.path));
+    const covered = attributedPaths.filter((p) => changedPaths.has(p)).length;
+    if (attributedPaths.length > 0 && covered < entries.length) {
+      say(`  ${covered} of ${entries.length} changed path(s) attributed to this session by the journal`);
+    }
     return 0;
   } catch (err) {
     // Fail closed toward evidence, open toward the developer.
@@ -629,8 +669,12 @@ function cmdDoctor(args: Record<string, string | boolean>): number {
   // was followed by a checkup that reported the hooks missing.
   const agent = resolveAgent(args["agent"] === undefined ? undefined : String(args["agent"]))
     ?? resolveAgent(undefined)!;
-  const sPath = args["settings"] !== undefined ? String(args["settings"]) : agent.settingsPath();
-  try {
+  const sPath = args["settings"] !== undefined ? String(args["settings"])
+              : agent.settingsPath !== undefined ? agent.settingsPath() : "";
+  if (sPath === "") {
+    checks.push(["warn", `hooks installed (${agent.label})`,
+      "this agent fires no hooks — sessions are imported with `provene import`"]);
+  } else try {
     const installed = proveneHooksInstalled(readSettings(sPath), agent);
     if (installed.record && installed.emit) {
       checks.push(["ok", `hooks installed (${agent.label})`, sPath]);
@@ -686,6 +730,9 @@ function cmdRecord(args: Record<string, string | boolean>): number {
       if (payload === undefined) return 0;
       const sessionId = sessionIdOf(payload);
       if (sessionId === undefined) return 0;
+      // A transcript-wired agent has no hook payload to parse. Nothing to do,
+      // and saying so through an exit code would block the tool.
+      if (agent.parse === undefined) return 0;
       for (const entry of agent.parse(payload)) append(sessionId, entry);
       return 0;
     }
@@ -723,6 +770,22 @@ function cmdRecord(args: Record<string, string | boolean>): number {
 function cmdInit(args: Record<string, string | boolean>): number {
   const agent = agentOrExplain("init", args);
   if (agent === undefined) return 2;
+  // There is nothing to install for an agent that fires no hooks. Writing a
+  // configuration anyway would leave a file that looks like working coverage
+  // and produces no receipts, which is the failure this tool exists to prevent
+  // in other people's repositories.
+  if (agent.wiring !== "hooks" || agent.settingsPath === undefined) {
+    out(`provene init: ${agent.label} has no hooks to install.`);
+    out("  It fires no lifecycle event, ships no CLI and exposes no MCP surface,");
+    out("  so nothing can observe a session while it happens. What it does leave");
+    out("  is a transcript, and a session is imported from that afterwards:");
+    out("");
+    out(`    provene import --agent ${agent.id} --session <session-id>`);
+    out(`    provene emit   --session <session-id>`);
+    out("");
+    out("  Run `provene import --agent " + agent.id + "` with no session to list the ones it can see.");
+    return 2;
+  }
   const path = args["settings"] !== undefined ? String(args["settings"]) : agent.settingsPath();
   const dryRun = args["dry-run"] === true;
 
@@ -770,6 +833,152 @@ function cmdInit(args: Record<string, string | boolean>): number {
   return 0;
 }
 
+/**
+ * Where Antigravity keeps the sessions it has written.
+ *
+ * `PROVENE_TRANSCRIPT_ROOT` overrides it, which is how the tests point at a
+ * fixture without a home directory full of real work.
+ */
+function transcriptRoot(): string {
+  const override = process.env["PROVENE_TRANSCRIPT_ROOT"];
+  if (override !== undefined && override !== "") return override;
+  return join(process.env["GEMINI_HOME"] ?? join(homedir(), ".gemini"), "antigravity", "brain");
+}
+
+const transcriptFor = (sessionId: string): string =>
+  join(transcriptRoot(), sessionId, ".system_generated", "logs", "transcript.jsonl");
+
+/** The `<session>` segment of a transcript path, when the path has that shape. */
+function sessionFromPath(path: string): string | undefined {
+  const parts = resolvePath(path).split(/[\\/]/);
+  const i = parts.lastIndexOf(".system_generated");
+  return i > 0 ? parts[i - 1] : undefined;
+}
+
+function listSessions(): number {
+  const root = transcriptRoot();
+  let ids: string[];
+  try {
+    ids = readdirSync(root).filter((d) => existsSync(transcriptFor(d)));
+  } catch {
+    out(`provene import: no transcripts under ${root}`);
+    out("  Set GEMINI_HOME if Antigravity keeps its sessions elsewhere.");
+    return 1;
+  }
+  if (ids.length === 0) { out(`provene import: no transcripts under ${root}`); return 1; }
+  out(`Sessions under ${root}:`);
+  for (const id of ids) out(`  ${id}`);
+  out("\n  provene import --agent antigravity --session <id>");
+  return 0;
+}
+
+/**
+ * Reads a completed session out of an agent's own log.
+ *
+ * This is the weaker half of the emitter contract and it is worth being plain
+ * about why. A hook is told what happened as it happens, by the agent, through
+ * a published interface. A transcript is a log we were never promised, read
+ * after the fact, whose result steps are matched to their calls by position
+ * because nothing links them. Everything ambiguous is dropped rather than
+ * guessed, so the receipt this produces claims less than a hooked agent's --
+ * which is the correct outcome, not a defect to be tuned away.
+ *
+ * It writes to the journal and stops there. Emitting stays a separate command
+ * so that a transcript can never take a shortcut past redaction: whatever this
+ * imports goes through exactly the same `emit` every other agent uses.
+ */
+function cmdImport(args: Record<string, string | boolean>): number {
+  const agent = agentOrExplain("import", args);
+  if (agent === undefined) return 2;
+  if (agent.wiring !== "transcript") {
+    out(`provene import: ${agent.label} is wired with hooks, so there is nothing to import.`);
+    out(`  Run \`provene init --agent ${agent.id}\` and its sessions record themselves.`);
+    return 2;
+  }
+
+  const explicit = args["transcript"] !== undefined ? String(args["transcript"]) : undefined;
+  const asked = args["session"] !== undefined ? String(args["session"]) : undefined;
+  if (explicit === undefined && asked === undefined) return listSessions();
+
+  const path = explicit ?? transcriptFor(asked!);
+  const sessionId = asked ?? sessionFromPath(path);
+  if (sessionId === undefined || sessionId === "") {
+    out("provene import: could not tell which session this transcript belongs to.");
+    out("  Pass --session <id> as well as --transcript.");
+    return 2;
+  }
+  if (!existsSync(path)) {
+    out(`provene import: no transcript at ${path}`);
+    out("  Run `provene import --agent antigravity` to list the sessions it can see.");
+    return 1;
+  }
+
+  let root: string;
+  try {
+    root = repoRoot();
+  } catch {
+    out("provene import: not inside a git repository.");
+    out("  Run this from the repository the session edited; imports are scoped to it.");
+    return 1;
+  }
+  // The same refusal `emit` makes, for the same reason and one step earlier:
+  // what gets appended below is unredacted, including any credential the agent
+  // passed on a command line.
+  if (journalInsideRepo(root)) {
+    out(`provene import: refusing — the journal is inside this repository (${journalDir()}).`);
+    out("  It holds unredacted commands. Set PROVENE_HOME outside the repo.");
+    return 1;
+  }
+
+  const existing = read(sessionId);
+  const replace = args["replace"] === true;
+  if (existing.length > 0 && !replace) {
+    out(`provene import: session ${sessionId} already has ${existing.length} journal entries.`);
+    out(`  ${journalPath(sessionId)}`);
+    out("  Importing again would record every command twice, and a duplicated test");
+    out("  run reads as two passes. Re-run with --replace to discard and re-import.");
+    return 1;
+  }
+
+  let entries;
+  try {
+    entries = antigravityEntries(readTranscript(path), { repoRoot: root });
+  } catch (err) {
+    out(`provene import: could not read ${path} (${err instanceof Error ? err.message : String(err)})`);
+    return 1;
+  }
+
+  const edits = entries.filter((e) => e.kind === "edit");
+  const commands = entries.filter((e) => e.kind === "command");
+  const withOutcome = commands.filter((e) => e.exitCode !== undefined);
+  const paths = [...new Set(edits.map((e) => e.path!))];
+
+  if (args["dry-run"] === true) {
+    out(`provene import --dry-run · ${path}`);
+  } else {
+    if (replace) resetSession(sessionId);
+    for (const entry of entries) append(sessionId, entry);
+    out(`provene: imported session ${sessionId}`);
+  }
+  out(`  ${paths.length} file(s) edited, ${commands.length} command(s), ` +
+      `${withOutcome.length} with a recorded exit code`);
+  for (const p of paths.slice(0, 10)) out(`    ${p}`);
+  if (paths.length > 10) out(`    … and ${paths.length - 10} more`);
+  if (withOutcome.length < commands.length) {
+    out(`  ${commands.length - withOutcome.length} command(s) have no outcome: backgrounded, or the`);
+    out("  transcript did not state one. Those cannot become verification runs.");
+  }
+  if (entries.length === 0) {
+    out("  Nothing was recorded. Either the session edited no files in this repository,");
+    out("  or the transcript format has changed — nothing is guessed when it does.");
+  }
+  if (args["dry-run"] !== true) {
+    out("");
+    out(`  Next: provene emit --session ${sessionId} --tool ${agent.id} --vendor ${agent.vendor}`);
+  }
+  return 0;
+}
+
 function parse(argv: readonly string[]): Record<string, string | boolean> {
   const o: Record<string, string | boolean> = {};
   let positional = 0;
@@ -792,7 +1001,8 @@ function parse(argv: readonly string[]): Record<string, string | boolean> {
 function usage(): void {
   out("provene — evidence receipts for AI-generated code changes\n");
   out("  provene init [--agent <name>] [--dry-run]              install an agent's hooks");
-  out("                                                         agents: " + agentNames().join(", "));
+  out("                                                         agents: " + hookAgents().join(", "));
+  out("  provene import --agent antigravity --session <id>      import a session that fired no hooks");
   out("  provene record --stdin                                 append a Claude Code hook payload");
   out("  provene record --session <id> --kind <k> [--path <p>]  append from any other agent");
   out("                 [--argv <cmd>] [--exit <n>]");
@@ -824,6 +1034,7 @@ function usage(): void {
  */
 const FLAGS: Readonly<Record<string, readonly string[]>> = {
   init: ["agent", "settings", "dry-run"],
+  import: ["agent", "session", "transcript", "replace", "dry-run"],
   doctor: ["agent", "settings"],
   record: ["stdin", "agent", "session", "kind", "path", "argv", "exit", "duration-ms"],
   emit: ["stdin", "agent", "quiet", "session", "base", "subject", "task",
@@ -889,6 +1100,7 @@ switch (command) {
   case "doctor": code = cmdDoctor(args); break;
   case "record": code = cmdRecord(args); break;
   case "init": code = cmdInit(args); break;
+  case "import": code = cmdImport(args); break;
   case "--version": case "version": out(VERSION); break;
   // Asking for help is not a usage error. `provene --help` exited 2, so any
   // script or Makefile that ran it as a sanity check saw a failure.

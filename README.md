@@ -122,7 +122,19 @@ That produces the same receipt the hooks produce, including verification runs �
 
 Gemini CLI was worth wiring properly rather than treating as "Claude with different names", because almost nothing about it matches: it has no tool-failure event, so an outcome comes from `tool_response.error`; its hook timeouts are milliseconds where Claude's are seconds; and a hook may not print to stdout at all, which makes `emit` announcing where it wrote the receipt a protocol violation rather than a courtesy. Each of those is a silent failure if assumed. [`spec/emitters.md`](spec/emitters.md) has the comparison.
 
-**Cursor, Codex and Antigravity are not wired**, and are not claimed to be. Antigravity documents hooks, but whether its `PostToolUse` carries the tool call, and whether IDE hooks fire at all, are open questions that reading cannot settle. If you have one of those agents, running that experiment is more useful to this project than the adapter it would unblock.
+**Antigravity is imported, not wired.** It documents a hooks system that never fires, ships no CLI, and exposes no MCP surface — four experiments against 2.11.0.0, all negative. What it does do is edit real files in your repository, so there is a change worth attesting and nothing that announces it. The only thing left to read is the log it writes for itself:
+
+```sh
+provene import --agent antigravity                 # list the sessions it can see
+provene import --agent antigravity --session <id>  # read one into the journal
+provene emit   --session <id> --tool antigravity --vendor google
+```
+
+`provene init --agent antigravity` refuses rather than writing a config that would sit there looking installed.
+
+This is a weaker integration than a hook and is documented as one. A transcript is a log nobody promised us, read after the fact: an exit status is English prose in the following step with nothing linking the two, and the format has already changed once inside a ten-session sample. So everything ambiguous is dropped rather than guessed — a missing exit code becomes no verification run, and a receipt that claims less is the correct outcome. `emit` also reports how many of the changed paths the session actually accounts for, because nothing closes an Antigravity session and the working tree may hold a great deal the agent never touched.
+
+**Cursor and Codex are not wired**, and are not claimed to be. If you use one, the four experiments above — run against your agent and written down — are worth more to this project than the adapter they would unblock. None of it is answerable by reading documentation.
 
 ## What a receipt proves, and what it does not
 

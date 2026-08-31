@@ -28,8 +28,19 @@ export interface AgentAdapter {
   readonly id: string;
   readonly vendor: string;
   readonly label: string;
-  /** Where user-level hook configuration lives. */
-  settingsPath(): string;
+  /**
+   * How this agent is observed.
+   *
+   * `hooks` is the real integration: the agent tells us what it did, as it does
+   * it, through a contract it publishes. `transcript` is the fallback for an
+   * agent that offers no such contract -- we read a log it writes for itself,
+   * afterwards, and take what we can prove from it. The two are not
+   * interchangeable and the receipts they produce are not equally good, which
+   * is why the difference is a field rather than a branch somewhere private.
+   */
+  readonly wiring: "hooks" | "transcript";
+  /** Where user-level hook configuration lives. Hook-wired agents only. */
+  settingsPath?(): string;
   readonly hooks: readonly HookSpec[];
   /**
    * Milliseconds or seconds? Claude Code reads a hook timeout as seconds and
@@ -47,13 +58,14 @@ export interface AgentAdapter {
    * protocol violation.
    */
   readonly stdoutMustBeSilent: boolean;
-  parse(payload: HookPayload): JournalEntry[];
+  parse?(payload: HookPayload): JournalEntry[];
 }
 
 const CLAUDE: AgentAdapter = {
   id: "claude-code",
   vendor: "anthropic",
   label: "Claude Code",
+  wiring: "hooks",
   settingsPath: () => join(process.env["CLAUDE_HOME"] ?? join(homedir(), ".claude"), "settings.json"),
   timeoutUnit: "s",
   stdoutMustBeSilent: false,
@@ -73,6 +85,7 @@ const GEMINI: AgentAdapter = {
   id: "gemini-cli",
   vendor: "google",
   label: "Gemini CLI",
+  wiring: "hooks",
   settingsPath: () => join(process.env["GEMINI_HOME"] ?? join(homedir(), ".gemini"), "settings.json"),
   timeoutUnit: "ms",
   stdoutMustBeSilent: true,
@@ -86,12 +99,41 @@ const GEMINI: AgentAdapter = {
   parse: geminiEntries,
 };
 
-export const AGENTS: Readonly<Record<string, AgentAdapter>> = { "claude-code": CLAUDE, "gemini-cli": GEMINI };
+/**
+ * Antigravity, which cannot be wired at all.
+ *
+ * Five things were tried against 2.11.0.0 and all five came back negative: the
+ * documented `hooks.json` is read but never fired; there is no CLI (`agy`,
+ * `antigravity`, `antigravity-cli` are all absent, and the installation
+ * contains five executables, none of them a command-line entry point);
+ * `mcp_config.json` is zero bytes; the plugins are content packs, not lifecycle
+ * hooks. What it does do is edit files in the real repository -- confirmed by
+ * `git status` after a run -- so the changes are there to attest even though
+ * nothing announces them.
+ *
+ * So this adapter has no hooks and no settings file, and `provene init` refuses
+ * rather than writing a configuration that would sit there looking installed.
+ * Sessions are imported afterwards from the transcript with `provene import`.
+ */
+const ANTIGRAVITY: AgentAdapter = {
+  id: "antigravity",
+  vendor: "google",
+  label: "Antigravity",
+  wiring: "transcript",
+  timeoutUnit: "ms",
+  stdoutMustBeSilent: false,
+  hooks: [],
+};
+
+export const AGENTS: Readonly<Record<string, AgentAdapter>> = {
+  "claude-code": CLAUDE, "gemini-cli": GEMINI, antigravity: ANTIGRAVITY,
+};
 
 /** Accepts the short names a person would actually type. */
 const ALIASES: Readonly<Record<string, string>> = {
   claude: "claude-code", "claude-code": "claude-code",
   gemini: "gemini-cli", "gemini-cli": "gemini-cli",
+  antigravity: "antigravity", agy: "antigravity",
 };
 
 export function resolveAgent(name: string | undefined): AgentAdapter | undefined {
@@ -101,3 +143,13 @@ export function resolveAgent(name: string | undefined): AgentAdapter | undefined
 }
 
 export const agentNames = (): string[] => [...new Set(Object.values(ALIASES))];
+
+/**
+ * The agents `init` can actually wire.
+ *
+ * `init` used to advertise every agent Provene knows, which included one it
+ * cannot install anything for. A list that offers a choice the next command
+ * refuses is how a tool teaches people not to trust its output.
+ */
+export const hookAgents = (): string[] =>
+  agentNames().filter((id) => AGENTS[id]?.wiring === "hooks");

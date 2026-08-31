@@ -8,7 +8,7 @@
  * The journal lives outside the repository. It holds unredacted observations and
  * must never be committed; the receipt built from it is the redacted artifact.
  */
-import { appendFileSync, mkdirSync, readFileSync, existsSync, readdirSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, writeFileSync, existsSync, readdirSync } from "node:fs";
 import { createHash } from "node:crypto";
 import { homedir } from "node:os";
 import { join, resolve, sep } from "node:path";
@@ -85,6 +85,20 @@ export function safeSessionId(raw: string): string {
 
 export function journalPath(sessionId: string): string {
   return join(journalDir(), "sessions", `${safeSessionId(sessionId)}.jsonl`);
+}
+
+/**
+ * Empties a session's journal.
+ *
+ * Only `import` uses this. A transcript can be imported twice -- the file does
+ * not go away when you read it -- and appending the second read to the first
+ * would double every command in the receipt, turning one passing test run into
+ * two. Truncating is destructive, so it is never implicit: `import` refuses a
+ * non-empty journal and names this flag rather than choosing for you.
+ */
+export function resetSession(sessionId: string): void {
+  const p = journalPath(sessionId);
+  if (existsSync(p)) writeFileSync(p, "", "utf8");
 }
 
 export function append(sessionId: string, entry: JournalEntry): void {
