@@ -26,3 +26,11 @@ packages/cli/coverage/
 # commit that put them in a public repository.
 o.json
 m
+
+# Local secrets. Never tracked, never suggested as a place to look. This file
+# is untracked by default, which is not the same as safe: `git add -A` is how
+# scratch files reached this public repository once already, and the next one
+# would be an API key.
+.env
+.env.*
+!.env.example
