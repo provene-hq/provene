@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.1.6 |
+| **Version** | 0.1.7 |
 | **Predicate type** | `https://provene.dev/attestation/code-change/v0.1` |
-| **Date** | 2026-08-30 |
+| **Date** | 2026-08-31 |
 | **Supersedes** | — |
 | **Depends on** | Threat Model v0.1 (assurance tiers, redaction contract) |
 
@@ -71,6 +71,16 @@ The change digest is computed as follows. Implementations MUST follow it exactly
 **Rationale.** The digest is over *blob identities*, never over a rendered diff. Diff rendering depends on algorithm, context width, whitespace flags and renaming heuristics — all of which change between git versions and configurations, and none of which may be allowed to alter a signature. Blob IDs are stable, cheap to obtain from plumbing, and independently recomputable by any verifier.
 
 The Statement subject MUST be a single entry: `{"name": "<repo-relative change name>", "digest": {"sha256": "<changeDigest>"}}`.
+
+### 4.1.1 The changeset manifest (normative)
+
+The byte string produced by step 4 above is the **changeset manifest**. It is not a derived convenience: it is the pre-image of the digest, and `SHA-256(manifest) == changeDigest` holds by construction.
+
+An implementation MUST be able to write the manifest to a file containing exactly those bytes and nothing else — no trailing newline, no byte-order mark, no re-encoding. An empty change set produces an empty file, whose digest is the SHA-256 of the empty string.
+
+**Rationale.** Without the manifest, a Provene subject digest is unaddressable by any tool but Provene. General-purpose attestation verifiers — `gh attestation verify`, `cosign` — take an *artefact*, hash it, and look up attestations for that hash; a digest over a change set matches no file in the tree, so no such verifier can find the attestation at all. Naming the pre-image as an artefact makes a Provene attestation verifiable with stock tooling, which matters more than any convenience: a receipt that only its own issuer can check is not portable evidence, and portability is the entire claim of this project.
+
+The manifest is reproducible from any checkout of the post-session tree, which is what makes it a binding rather than a hint: a verifier regenerates it from the repository, and equality of the regenerated digest with the signed subject digest is what establishes that the signature covers the work in front of them.
 
 ### 4.2 Verifying the binding against a commit
 
@@ -375,6 +385,7 @@ Marked for external review; none block a reference implementation.
 
 ## Changelog
 
+- **0.1.7** (2026-08-31) — the changeset manifest named as a normative artefact (§4.1.1). The digest's pre-image already existed in every implementation; what was missing was the requirement that it be writable as a file, without which no general-purpose attestation verifier can address a Provene subject digest, because it corresponds to no file in the tree. Found when building verification for the first signed aggregate: we could produce T2 and could not check one.
 - **0.1.6** (2026-08-31) — aggregate receipts given a schema and a storage rule. They had been specified in §9 since v0.1.0 with neither, which the schema round-trip harness reported on its first run. `sigstore-github` added as a trust root for the case where the platform, not the signer, selects the Sigstore instance.
 - **0.1.5** (2026-08-31) — `C` and `T` added to the status letters. `git diff --raw` emits both, so a repository using copies, symlinks or submodules produced receipts its own schema rejected. Found by a reviewer reading the generator in the property tests rather than the code.
 - **0.1.4** (2026-08-31) — `model` is optional and `modelSource` is required only alongside it. Found when wiring the real Claude Code hooks: the payload identifies the tool but not the model, and the previous shape forced an emitter to either invent a model or record a known agent as `unknown`.
