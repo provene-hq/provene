@@ -1,12 +1,17 @@
 #!/usr/bin/env node
 /** provene — portable, signed evidence receipts for AI-generated code changes. */
-import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { diffEntries, repoRoot, headCommit, rootCommit, git } from "./git.ts";
-import { append, read, journalDir, recordError } from "./journal.ts";
+import { append, read, journalDir, recordError, markEmitted, orphanedSessions } from "./journal.ts";
 import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID } from "./redact.ts";
 import { buildT0, canonicalJson, checkStatement, receiptFileName, type Statement } from "./receipt.ts";
 import { changeDigest } from "./changedigest.ts";
+import { readStdin, parsePayload, toJournalEntries } from "./hookinput.ts";
+import {
+  userSettingsPath, readSettings, withProveneHooks, writeSettings,
+  proveneHooksInstalled, RECORD_COMMAND, EMIT_COMMAND,
+} from "./settings.ts";
 import { createRequire } from "node:module";
 
 // Read the real version rather than restating it. A hardcoded constant drifts
@@ -17,9 +22,16 @@ const VERSION = (createRequire(import.meta.url)("../package.json") as { version:
 const out = (s: string): void => { process.stdout.write(s + "\n"); };
 
 function cmdEmit(args: Record<string, string | boolean>): number {
-  const sessionId = String(args["session"] ?? process.env["PROVENE_SESSION_ID"] ?? "");
+  let sessionId = String(args["session"] ?? process.env["PROVENE_SESSION_ID"] ?? "");
+  let hookCwd: string | undefined;
+  if (args["stdin"] === true) {
+    const payload = parsePayload(readStdin());
+    if (payload?.session_id !== undefined) sessionId = payload.session_id;
+    if (payload?.cwd !== undefined) hookCwd = payload.cwd;
+  }
   if (sessionId === "") { out("provene emit: --session is required"); return 2; }
   try {
+    if (hookCwd !== undefined) process.chdir(hookCwd);
     const root = repoRoot();
     const base = String(args["base"] ?? headCommit());
     const entries = diffEntries(base, root);
@@ -61,6 +73,7 @@ function cmdEmit(args: Record<string, string | boolean>): number {
     const rel = receiptFileName(statement, false);
     mkdirSync(join(root, ".provene"), { recursive: true });
     writeFileSync(join(root, rel), canonicalJson(statement), "utf8");
+    markEmitted(sessionId, changeDigest(entries));
     out(`provene: wrote ${rel}`);
     out(`  tier T0 (unsigned) · ${entries.length} paths · change ${changeDigest(entries).slice(0, 12)}`);
     const unattributed = (statement.predicate as any).verification.unverifiedPaths as string[];
@@ -147,6 +160,32 @@ function cmdDoctor(): number {
     ? ["ok", ".gitattributes stanza", "receipts collapse in review"]
     : ["warn", ".gitattributes stanza", "add: .provene/** linguist-generated=true -diff"]);
 
+  // Is the hook actually wired up? doctor exists to answer this: a repository
+  // that believes it has coverage and does not is the worst outcome available.
+  const sPath = userSettingsPath();
+  try {
+    const installed = proveneHooksInstalled(readSettings(sPath));
+    if (installed.record && installed.emit) {
+      checks.push(["ok", "hooks installed", sPath]);
+    } else if (!installed.record && !installed.emit) {
+      checks.push(["warn", "hooks installed", `not found in ${sPath} — run \`provene init\``]);
+    } else {
+      checks.push(["fail", "hooks installed",
+        `only ${installed.record ? "PostToolUse" : "SessionEnd"} is wired — receipts will be incomplete`]);
+    }
+  } catch (err) {
+    checks.push(["fail", "hooks installed", err instanceof Error ? err.message : String(err)]);
+  }
+
+  // A journal with no emitted-marker beside it is a session that ended without
+  // producing a receipt. Recoverable, but only if someone is told.
+  const orphans = orphanedSessions();
+  if (orphans.length > 0) {
+    const shown = orphans.slice(0, 3).join(", ");
+    checks.push(["warn", "unemitted sessions",
+      `${orphans.length} journal(s) never produced a receipt: ${shown}${orphans.length > 3 ? ", …" : ""}`]);
+  }
+
   try {
     checks.push(["ok", "git version", git(["--version"])]);
   } catch { /* the repository check already covers a missing git */ }
@@ -165,10 +204,20 @@ function cmdDoctor(): number {
 }
 
 function cmdRecord(args: Record<string, string | boolean>): number {
-  // What a PostToolUse hook calls. Append only: no crypto, no git, no network.
-  const sessionId = String(args["session"] ?? process.env["PROVENE_SESSION_ID"] ?? "");
-  if (sessionId === "") return 0;
+  // What PostToolUse calls, on every matching tool use. Append only: no crypto,
+  // no git, no network. It must be cheap and it must never fail a session.
   try {
+    if (args["stdin"] === true) {
+      const payload = parsePayload(readStdin());
+      if (payload === undefined) return 0;
+      const sessionId = payload.session_id;
+      if (sessionId === undefined || sessionId === "") return 0;
+      for (const entry of toJournalEntries(payload)) append(sessionId, entry);
+      return 0;
+    }
+
+    const sessionId = String(args["session"] ?? process.env["PROVENE_SESSION_ID"] ?? "");
+    if (sessionId === "") return 0;
     const kind = String(args["kind"] ?? "note") as "edit" | "command" | "test" | "note";
     append(sessionId, {
       at: new Date().toISOString(), kind,
@@ -176,9 +225,50 @@ function cmdRecord(args: Record<string, string | boolean>): number {
       ...(args["argv"] !== undefined ? { argv: String(args["argv"]).split(" ") } : {}),
     });
   } catch (err) {
-    recordError(sessionId, err instanceof Error ? err.message : String(err));
+    recordError(String(args["session"] ?? "unknown"), err instanceof Error ? err.message : String(err));
   }
   return 0; // never fails a session
+}
+
+function cmdInit(args: Record<string, string | boolean>): number {
+  const path = args["settings"] !== undefined ? String(args["settings"]) : userSettingsPath();
+  const dryRun = args["dry-run"] === true;
+
+  let current;
+  try {
+    current = readSettings(path);
+  } catch (err) {
+    out(`provene init: ${err instanceof Error ? err.message : String(err)}`);
+    return 1;
+  }
+
+  const { next, added } = withProveneHooks(current);
+  if (added.length === 0) {
+    out(`provene: hooks already installed in ${path}`);
+    out("  nothing to do");
+    return 0;
+  }
+
+  if (dryRun) {
+    out(`provene init --dry-run · would edit ${path}`);
+    for (const a of added) out(`  + ${a}`);
+    out("\nResulting hooks block:");
+    out(JSON.stringify({ hooks: next.hooks }, null, 2));
+    return 0;
+  }
+
+  const backup = writeSettings(path, next);
+  out(`provene: hooks installed in ${path}`);
+  for (const a of added) out(`  + ${a}`);
+  if (backup !== undefined) out(`  previous settings backed up to ${backup}`);
+  out("");
+  out("  PostToolUse appends to a session journal outside this repository.");
+  out("  SessionEnd writes the receipt. SessionEnd is used rather than Stop");
+  out("  because a Stop hook can block and force the session to continue.");
+  out("");
+  out("  Start a new Claude Code session for this to take effect, then run");
+  out("  `provene doctor` to confirm the hook actually fired.");
+  return 0;
 }
 
 function parse(argv: readonly string[]): Record<string, string | boolean> {
@@ -203,10 +293,12 @@ switch (command) {
   case "verify": code = cmdVerify(args); break;
   case "doctor": code = cmdDoctor(); break;
   case "record": code = cmdRecord(args); break;
+  case "init": code = cmdInit(args); break;
   case "--version": case "version": out(VERSION); break;
   default:
     out("provene — evidence receipts for AI-generated code changes\n");
-    out("  provene record --session <id> --kind edit --path <p>   append to the session journal");
+    out("  provene init [--dry-run] [--settings <path>]           install the Claude Code hooks");
+    out("  provene record --stdin | --session <id> ...            append to the session journal");
     out("  provene emit   --session <id> [--base <commit>]        write a T0 receipt");
     out("  provene verify <receipt> [--against <commit>]          check integrity, report tier");
     out("  provene doctor                                         check the local setup");

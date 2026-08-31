@@ -8,7 +8,7 @@
  * The journal lives outside the repository. It holds unredacted observations and
  * must never be committed; the receipt built from it is the redacted artifact.
  */
-import { appendFileSync, mkdirSync, readFileSync, existsSync } from "node:fs";
+import { appendFileSync, mkdirSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
 import { join } from "node:path";
 
@@ -43,6 +43,37 @@ export function read(sessionId: string): JournalEntry[] {
     .split("\n")
     .filter((l) => l.trim() !== "")
     .map((l) => JSON.parse(l) as JournalEntry);
+}
+
+/**
+ * A journal is only orphaned if nothing came of it.
+ *
+ * emit writes a marker beside the journal naming the receipt it produced. A
+ * journal without one is a session that ended without emitting -- a crash, a
+ * killed terminal, a SessionEnd hook that never ran -- and is recoverable with
+ * `provene emit --session <id>`. Without the marker, doctor would nag about
+ * every journal forever, which is how a checkup earns being ignored.
+ */
+export function markEmitted(sessionId: string, changeDigest: string): void {
+  try {
+    const p = join(journalDir(), "sessions", `${sessionId}.emitted`);
+    appendFileSync(p, JSON.stringify({ at: new Date().toISOString(), changeDigest }) + "\n", "utf8");
+  } catch { /* advisory only; never fails an emit */ }
+}
+
+export function orphanedSessions(): string[] {
+  try {
+    const dir = join(journalDir(), "sessions");
+    if (!existsSync(dir)) return [];
+    const files = readdirSync(dir);
+    const emitted = new Set(files.filter((f) => f.endsWith(".emitted")).map((f) => f.slice(0, -8)));
+    return files
+      .filter((f) => f.endsWith(".jsonl"))
+      .map((f) => f.slice(0, -6))
+      .filter((id) => !emitted.has(id));
+  } catch {
+    return [];
+  }
 }
 
 /**
