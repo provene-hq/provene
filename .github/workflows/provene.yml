@@ -34,6 +34,7 @@ jobs:
           npm --prefix packages/cli run build
 
       - name: Test with coverage
+        id: test
         working-directory: packages/cli
         run: |
           mkdir -p coverage
@@ -54,10 +55,21 @@ jobs:
           python3 spec/conformance/runner/validate_receipts.py "$RUNNER_TEMP/samples" spec/examples
 
       - name: Provene
-        if: github.event_name == 'pull_request'
+        # `!cancelled()` rather than a plain event check: if the test step
+        # failed, the job stops before this step, and the only receipts this
+        # repository would ever produce would be ones recording PASSED. A
+        # receipt that can only say tests passed is not evidence about tests.
+        # Running here on failure records FAILED, which is the more useful
+        # half of the claim.
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         uses: ./
         with:
           coverage: packages/cli/coverage/lcov.info
+          # CI's own observation of its own test step. This is the whole point
+          # of the tier model: the same result asserted by the local hook is
+          # T0, because the party asserting it wants the merge.
+          test-result: ${{ steps.test.outcome == 'success' && 'PASSED' || 'FAILED' }}
+          test-tool: node --test
           # The repository signs its own pull requests, so every visitor sees a
           # real T2 attestation before reading a line of the README.
           #

@@ -16,7 +16,7 @@ import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { execFileSync } from "node:child_process";
 import { changeDigest } from "./changedigest.ts";
-import { diffEntries } from "./git.ts";
+import { committedEntries } from "./git.ts";
 import { loadReceipts, receiptsInRange } from "./check.ts";
 import type { Statement } from "./receipt.ts";
 
@@ -53,7 +53,13 @@ function commitsInRange(root: string, base: string, head: string): string[] {
 }
 
 export function buildAggregate(input: PromoteInput): { predicate: Record<string, unknown>; subjectDigest: string } {
-  const entries = diffEntries(input.base, input.root);
+  // Committed state, never the working tree. In CI a build step has usually
+  // already run, and diffing the working tree put coverage output and an
+  // npm-rewritten lockfile inside the signed digest -- a change set no checkout
+  // of that commit can reproduce, so the signature could never verify.
+  // `input.head` was accepted and silently ignored here, which is what let the
+  // bug survive a reading of the caller.
+  const entries = committedEntries(input.base, input.head, input.root);
   const subjectDigest = changeDigest(entries);
 
   // Only receipts this range introduced. A receipt from earlier history

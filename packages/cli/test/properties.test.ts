@@ -17,7 +17,7 @@ import { mkdtempSync, writeFileSync, mkdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { changeDigest, canonicalPayload, type ChangeEntry } from "../src/changedigest.ts";
-import { diffEntries } from "../src/git.ts";
+import { workingTreeEntries } from "../src/git.ts";
 
 function rng(seed: number): () => number {
   let x = seed | 0 || 1;
@@ -122,7 +122,7 @@ test("working-tree blobs match what git would commit, including CRLF and odd pat
     for (const p of paths.slice(1)) writeFileSync(join(dir, p), `content of ${p}\n`);
     writeFileSync(join(dir, "seed.txt"), "seed modified\r\n");
 
-    const entries = diffEntries(base, dir);
+    const entries = workingTreeEntries(base, dir);
     assert.ok(entries.length >= paths.length, "untracked files must be included");
 
     // Every recorded post blob must equal what git itself would store.
@@ -136,7 +136,7 @@ test("working-tree blobs match what git would commit, including CRLF and odd pat
     // And the digest must survive the round trip through an actual commit.
     const before = changeDigest(entries);
     git("add", "-A"); git("commit", "-qm", "work");
-    const after = changeDigest(diffEntries(base, dir));
+    const after = changeDigest(workingTreeEntries(base, dir));
     assert.equal(after, before, "digest changed when the same content was committed");
   } finally {
     rmSync(dir, { recursive: true, force: true });
@@ -159,7 +159,7 @@ test("every recorded object id satisfies the schema's own pattern", () => {
     writeFileSync(join(dir, "fresh.txt"), "new\n");     // untracked
     git("add", "tracked.txt");                           // staged, so diff has a real oid
 
-    for (const e of diffEntries(base, dir)) {
+    for (const e of workingTreeEntries(base, dir)) {
       assert.match(e.preBlob, OID, `preBlob for ${e.path} is not a full object id`);
       assert.match(e.postBlob, OID, `postBlob for ${e.path} is not a full object id`);
     }

@@ -18,7 +18,7 @@ import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, symlinkSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { diffEntries, repoRoot, headCommit, rootCommit, git as gitOut } from "../src/git.ts";
+import { workingTreeEntries, committedEntries, mergeBase, repoRoot, headCommit, rootCommit, git as gitOut } from "../src/git.ts";
 
 const onWindows = process.platform === "win32";
 
@@ -101,7 +101,7 @@ test("local core.abbrev cannot shorten a recorded object id", () => {
     // made the same content digest differently before and after a commit.
     r.git("config", "core.abbrev", "7");
     writeFileSync(join(r.dir, "seed.txt"), "seed modified\n");
-    const entries = diffEntries(base, r.dir);
+    const entries = workingTreeEntries(base, r.dir);
     const seedEntry = entries.find((e) => e.path === "seed.txt")!;
     assert.equal(seedEntry.preBlob.length, 40);
     assert.equal(seedEntry.postBlob.length, 40);
@@ -121,7 +121,7 @@ test("a non-ASCII tracked path comes through literally", () => {
     const base = r.git("rev-parse", "HEAD");
     r.git("config", "core.quotePath", "true");
     writeFileSync(join(r.dir, "café.txt"), "two\n");
-    const entries = diffEntries(base, r.dir);
+    const entries = workingTreeEntries(base, r.dir);
     assert.ok(entries.some((e) => e.path === "café.txt"),
       `expected a literal path, got ${entries.map((e) => e.path).join(", ")}`);
   } finally { rmSync(r.dir, { recursive: true, force: true }); }
@@ -134,7 +134,7 @@ test("batched hashing agrees with hashing each file on its own", () => {
     // Enough files to exercise the --stdin-paths batch rather than the fallback.
     const names = Array.from({ length: 150 }, (_, i) => `f${i}.txt`);
     for (const [i, n] of names.entries()) writeFileSync(join(r.dir, n), `content ${i}\n`);
-    const entries = diffEntries(base, r.dir);
+    const entries = workingTreeEntries(base, r.dir);
     for (const n of names) {
       const e = entries.find((x) => x.path === n);
       assert.ok(e !== undefined, `${n} missing from the change set`);
@@ -152,7 +152,7 @@ test("a path containing a newline is hashed correctly rather than mispaired", { 
     try { writeFileSync(join(r.dir, awkward), "awkward\n"); }
     catch { return; } // some filesystems refuse the name; that is not a defect here
     writeFileSync(join(r.dir, "ordinary.txt"), "ordinary\n");
-    const entries = diffEntries(base, r.dir);
+    const entries = workingTreeEntries(base, r.dir);
     const e = entries.find((x) => x.path === awkward);
     assert.ok(e !== undefined, "the newline path must still be recorded");
     assert.equal(e.postBlob, r.git("hash-object", "--", awkward));
@@ -171,7 +171,7 @@ test("ignored files stay out of the receipt", () => {
     writeFileSync(join(r.dir, "node_modules", "left-pad", "index.js"), "module.exports=1\n");
     writeFileSync(join(r.dir, "debug.log"), "noise\n");
     writeFileSync(join(r.dir, "real.ts"), "export const x = 1;\n");
-    const paths = diffEntries(base, r.dir).map((e) => e.path);
+    const paths = workingTreeEntries(base, r.dir).map((e) => e.path);
     assert.deepEqual(paths.filter((p) => p.startsWith("node_modules") || p.endsWith(".log")), []);
     assert.ok(paths.includes("real.ts"));
   } finally { rmSync(r.dir, { recursive: true, force: true }); }
@@ -189,7 +189,7 @@ test("a deletion records no post image, and a rename records where it came from"
     r.git("mv", "before.txt", "after.txt");
     r.git("commit", "-qm", "change");
 
-    const entries = diffEntries(base, r.dir);
+    const entries = workingTreeEntries(base, r.dir);
     const gone = entries.find((e) => e.path === "gone.txt")!;
     assert.equal(gone.status, "D");
     assert.equal(gone.postBlob, "-");
@@ -211,7 +211,7 @@ test("a file becoming a symlink is recorded as a type change, not a modification
     rmSync(join(r.dir, "thing.txt"));
     try { symlinkSync("target.txt", join(r.dir, "thing.txt")); }
     catch { return; } // no symlink privilege; the case is real, this host cannot show it
-    const e = diffEntries(base, r.dir).find((x) => x.path === "thing.txt")!;
+    const e = workingTreeEntries(base, r.dir).find((x) => x.path === "thing.txt")!;
     // T is one of the letters added in RFC 0001 v0.1.5. Before that, this
     // produced a receipt the project's own schema rejected.
     assert.equal(e.status, "T");
@@ -223,13 +223,111 @@ test("an unstaged edit binds to its content, not to an all-zero placeholder", ()
   try {
     const base = seed(r);
     writeFileSync(join(r.dir, "seed.txt"), "first edit\n");
-    const first = diffEntries(base, r.dir).find((e) => e.path === "seed.txt")!.postBlob;
+    const first = workingTreeEntries(base, r.dir).find((e) => e.path === "seed.txt")!.postBlob;
     writeFileSync(join(r.dir, "seed.txt"), "second, entirely different edit\n");
-    const second = diffEntries(base, r.dir).find((e) => e.path === "seed.txt")!.postBlob;
+    const second = workingTreeEntries(base, r.dir).find((e) => e.path === "seed.txt")!.postBlob;
     // The original defect: git reports all-zeros for an unstaged post image, so
     // two different edits produced the same digest -- the normal case at the
     // end of an agent session, which made the binding decorative.
     assert.notEqual(first, second);
     assert.match(first, /^[0-9a-f]{40}$/);
+  } finally { rmSync(r.dir, { recursive: true, force: true }); }
+});
+
+/**
+ * The two findings a reviewer produced against the signed path, as tests.
+ *
+ * Both were the same mistake in different clothing: a function whose name did
+ * not say WHICH change set it computed, used by a caller that needed the other
+ * one. `diffEntries` is now `workingTreeEntries` and `committedEntries`, so the
+ * choice has to be made out loud at every call site.
+ */
+
+test("committedEntries ignores the working tree, however dirty CI leaves it", () => {
+  const r = repo();
+  try {
+    writeFileSync(join(r.dir, "src.ts"), "export const a = 1;\n");
+    writeFileSync(join(r.dir, "package-lock.json"), '{"v":1}\n');
+    r.git("add", "-A"); r.git("commit", "-qm", "base");
+    const base = r.git("rev-parse", "HEAD");
+    writeFileSync(join(r.dir, "src.ts"), "export const a = 2;\n");
+    r.git("add", "-A"); r.git("commit", "-qm", "the actual change");
+    const head = r.git("rev-parse", "HEAD");
+
+    // What a CI job does between checkout and `provene promote`: a build step
+    // rewrites a tracked lockfile and drops untracked output in the tree.
+    writeFileSync(join(r.dir, "package-lock.json"), '{"v":2}\n');
+    mkdirSync(join(r.dir, "coverage"), { recursive: true });
+    writeFileSync(join(r.dir, "coverage", "lcov.info"), "TN:\n");
+
+    const committed = committedEntries(base, head, r.dir).map((e) => e.path);
+    assert.deepEqual(committed, ["src.ts"]);
+
+    // The working-tree view is not wrong, it answers a different question --
+    // which is exactly why the two must not share a name.
+    const working = workingTreeEntries(base, r.dir).map((e) => e.path).sort();
+    assert.deepEqual(working, ["coverage/lcov.info", "package-lock.json", "src.ts"]);
+  } finally { rmSync(r.dir, { recursive: true, force: true }); }
+});
+
+test("a range means the three-dot diff, so an advancing base branch is not the branch's work", () => {
+  const r = repo();
+  try {
+    writeFileSync(join(r.dir, "f.txt"), "base\n");
+    r.git("add", "-A"); r.git("commit", "-qm", "m0");
+    const main = r.git("rev-parse", "--abbrev-ref", "HEAD");
+
+    r.git("checkout", "-qb", "feature");
+    writeFileSync(join(r.dir, "feat.txt"), "feature\n");
+    r.git("add", "-A"); r.git("commit", "-qm", "f1");
+    const head = r.git("rev-parse", "HEAD");
+
+    r.git("checkout", "-q", main);
+    writeFileSync(join(r.dir, "main.txt"), "moved on\n");
+    r.git("add", "-A"); r.git("commit", "-qm", "m1");
+    const baseTip = r.git("rev-parse", "HEAD");
+
+    // Two-dot against the advanced base claims the branch DELETED main.txt.
+    const twoDot = committedEntries(baseTip, head, r.dir);
+    assert.ok(twoDot.some((e) => e.path === "main.txt" && e.status === "D"),
+      "fixture must reproduce the reviewer's failure");
+
+    const mb = mergeBase(baseTip, head, r.dir);
+    assert.notEqual(mb, undefined);
+    const threeDot = committedEntries(mb!, head, r.dir).map((e) => e.path);
+    assert.deepEqual(threeDot, ["feat.txt"]);
+  } finally { rmSync(r.dir, { recursive: true, force: true }); }
+});
+
+test("resolving a merge base is a no-op on the pull request merge commit CI checks out", () => {
+  const r = repo();
+  try {
+    writeFileSync(join(r.dir, "f.txt"), "base\n");
+    r.git("add", "-A"); r.git("commit", "-qm", "m0");
+    const main = r.git("rev-parse", "--abbrev-ref", "HEAD");
+    r.git("checkout", "-qb", "feature");
+    writeFileSync(join(r.dir, "feat.txt"), "feature\n");
+    r.git("add", "-A"); r.git("commit", "-qm", "f1");
+    r.git("checkout", "-q", main);
+    writeFileSync(join(r.dir, "main.txt"), "moved on\n");
+    r.git("add", "-A"); r.git("commit", "-qm", "m1");
+    const baseTip = r.git("rev-parse", "HEAD");
+    // actions/checkout gives a pull_request job refs/pull/N/merge, not the head.
+    r.git("checkout", "-qb", "pr-merge", baseTip);
+    r.git("merge", "-q", "--no-edit", "feature");
+    const mergeCommit = r.git("rev-parse", "HEAD");
+
+    // So the merge base of (base tip, merge commit) is the base tip itself, and
+    // the fix changes nothing in the configuration this project actually runs.
+    assert.equal(mergeBase(baseTip, mergeCommit, r.dir), baseTip);
+    assert.deepEqual(committedEntries(baseTip, mergeCommit, r.dir).map((e) => e.path), ["feat.txt"]);
+  } finally { rmSync(r.dir, { recursive: true, force: true }); }
+});
+
+test("mergeBase reports absence rather than throwing, so a shallow clone still runs", () => {
+  const r = repo();
+  try {
+    seed(r);
+    assert.equal(mergeBase("HEAD", "0000000000000000000000000000000000000000", r.dir), undefined);
   } finally { rmSync(r.dir, { recursive: true, force: true }); }
 });
