@@ -2,11 +2,11 @@
 
 Portable, cryptographically signed evidence receipts for AI-generated code changes.
 
-When a coding agent finishes a session, Provene records what happened — which agent and model, from what task, which files changed, which commands ran, which tests executed and what they returned — as a small signed artifact attached to the commit. A GitHub Action verifies receipts on pull requests and annotates the diff. A policy engine can require evidence before a merge.
+When a coding agent finishes a session, Provene records what happened — which agent and model, from what task, which files changed, which commands ran, which tests executed and what they returned — as a small artifact attached to the commit. A GitHub Action verifies those receipts on pull requests, annotates the changed lines no test executed, and signs a CI-attested aggregate over the whole range.
 
-GitHub records this for Copilot, inside GitHub. GitLab records it for Duo, inside GitLab. If your team runs Claude Code, Cursor and Codex side by side, nothing records it at all.
+GitHub records this for Copilot, inside GitHub. GitLab records it for Duo, inside GitLab. If your team runs Claude Code, Cursor and Codex side by side, nothing records it across all three.
 
-**Status: pre-alpha.** The specification is drafted and the reference CLI emits and verifies T0 receipts. Signing, promotion, the Action and the policy engine are not built yet.
+**Status: pre-alpha.** The specification is drafted. The reference CLI emits T0 receipts from Claude Code hooks, verifies them, builds the T2 aggregate, and verifies a signed one. The GitHub Action runs the whole path and signs through GitHub's attestation store. The policy engine specified in RFC 0002 is deliberately not built yet — the grammar has a conformance suite and no implementation, so the specification cannot quietly become "whatever the code does".
 
 ## What a receipt does and does not prove
 
@@ -27,6 +27,26 @@ A receipt generated on your machine is a **self-attestation by the person who wa
 
 See [`spec/rfc/0001-receipt-schema.md`](spec/rfc/0001-receipt-schema.md) and [the threat model](spec/threat-model.md).
 
+## Verifying a signed aggregate
+
+Provene does not implement signature verification and will not. `gh attestation verify` does that half, and its exit code — not any parsing of its output — is the trust boundary.
+
+```sh
+provene verify-aggregate --repo owner/name --base <base-commit>
+```
+
+This recomputes the change set from your checkout, hands it to `gh`, and then checks the half `gh` cannot: that the signature covers the work in front of you. It reports three outcomes — verified, failed, and *could not check* — and never renders the third as either of the others.
+
+Stock tooling works too, because `provene manifest` writes the exact bytes the change digest is taken over, so `sha256(manifest)` *is* the subject digest (RFC 0001 §4.1.1):
+
+```sh
+provene manifest --base <base-commit> --out changeset
+gh attestation verify changeset --repo owner/name \
+  --predicate-type https://provene.dev/attestation/code-change-aggregate/v0.1
+```
+
+Signing uses GitHub's attestation store, which is free for public repositories and a paid feature for private ones. Where the platform will not store an attestation, the Action fails loudly rather than reporting an unsigned receipt as signed.
+
 ## Layout
 
 ```
@@ -36,14 +56,18 @@ spec/examples/     worked receipts and policies
 spec/conformance/  the fixtures — these, not the prose, are the specification
 spec/threat-model.md   what breaks this, and what it does not defend against
 packages/cli/      reference implementation (TypeScript, no runtime dependencies)
+action.yml         the GitHub Action: check, annotate, promote, sign
 ```
 
 ## Running it
 
 ```sh
-node --test 'packages/cli/test/*.test.ts'   # implementation against the fixtures
-python3 spec/conformance/runner/run.py      # the suite against reference semantics
+node --test 'packages/cli/test/*.test.ts'          # 86 tests
+python3 spec/conformance/runner/run.py             # 50 fixtures against reference semantics
+python3 spec/conformance/runner/validate_receipts.py   # emitted receipts against the schemas
 ```
+
+Requires Node 22.6 or newer: the sources run directly, with no build step and no bundler.
 
 ## Contributing
 
