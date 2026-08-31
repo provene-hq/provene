@@ -14,6 +14,12 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
+import { execFileSync, spawnSync } from "node:child_process";
+import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, readdirSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+
+const CLI = join(import.meta.dirname, "..", "src", "cli.ts");
 import { geminiEntries, claudeEntries, type HookPayload } from "../src/hookinput.ts";
 import { AGENTS, resolveAgent } from "../src/agents.ts";
 import { withProveneHooks, proveneHooksInstalled, hookCommand } from "../src/settings.ts";
@@ -128,4 +134,97 @@ test("the agent is named explicitly and never inferred from the payload", () => 
 test("each agent's settings live where that agent looks for them", () => {
   assert.match(GEMINI.settingsPath(), /[/\\]\.gemini[/\\]settings\.json$/);
   assert.match(CLAUDE.settingsPath(), /[/\\]\.claude[/\\]settings\.json$/);
+});
+
+/**
+ * Silence, on every path and not just the happy one.
+ *
+ * Gemini CLI parses a hook's stdout as JSON and documents anything else as an
+ * error. There was already a test asserting that `init` writes `--quiet` into
+ * the hook command — and it passed while `emit` printed on five of its six
+ * exits anyway, because `--quiet` was consulted only after the early returns.
+ *
+ * A real session made it visible in the least dramatic way possible: the model
+ * call failed, so nothing was edited, so `emit` took the "no changes to attest"
+ * path, and Gemini surfaced our sentence to the developer as
+ * `Hook system message: provene: no changes to attest`.
+ *
+ * This walks every exit `emit` has. The assertion is on stdout being empty
+ * byte-for-byte, not on the absence of a particular sentence, so a new message
+ * added to a new branch fails here rather than in someone's terminal.
+ */
+test("under --quiet, every exit from emit is byte-for-byte silent", () => {
+  const dir = mkdtempSync(join(tmpdir(), "provene-quiet-"));
+  try {
+    const run = (argv: string[], env: Record<string, string | undefined>, cwd: string): {
+      status: number | null; stdout: string; stderr: string;
+    } => spawnSync(process.execPath, [CLI, ...argv], {
+      cwd, encoding: "utf8", env: { ...process.env, ...env },
+    });
+
+    const repo = join(dir, "repo");
+    mkdirSync(repo, { recursive: true });
+    const git = (...a: string[]): void => {
+      execFileSync("git", a, { cwd: repo, stdio: "ignore" });
+    };
+    git("init", "-q", ".");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    writeFileSync(join(repo, "README.md"), "one\n", "utf8");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+
+    const outside = { PROVENE_HOME: join(dir, "home") };
+    const cases: Array<[string, string[], Record<string, string | undefined>, string]> = [
+      // An agent name nothing knows. Even the error is a protocol violation.
+      ["unknown agent", ["emit", "--quiet", "--agent", "no-such-agent", "--session", "s"], outside, repo],
+      // No session id at all.
+      ["missing session", ["emit", "--quiet"], { ...outside, PROVENE_SESSION_ID: "" }, repo],
+      // Nothing changed. THE case a real session hit.
+      ["no changes to attest", ["emit", "--quiet", "--session", "s"], outside, repo],
+      // Not a repository at all, which throws into the catch.
+      ["not a git repository", ["emit", "--quiet", "--session", "s"], outside, dir],
+      // The journal inside the repository: a refusal, and a loud one. Last,
+      // because the refusal writes its own diagnosis into that journal and so
+      // dirties the working tree -- which, run earlier, quietly turned the
+      // "nothing changed" case above into a change and never tested it.
+      ["journal inside the repo", ["emit", "--quiet", "--session", "s"],
+       { PROVENE_HOME: join(repo, ".provene-home") }, repo],
+    ];
+    for (const [name, argv, env, cwd] of cases) {
+      const r = run(argv, env, cwd);
+      assert.equal(r.stdout, "", `${name}: printed ${JSON.stringify(r.stdout)}`);
+      assert.equal(r.stderr, "", `${name}: stderr ${JSON.stringify(r.stderr)}`);
+    }
+
+    // And the success path, which was the only one that ever honoured it.
+    writeFileSync(join(repo, "README.md"), "two\n", "utf8");
+    const ok = run(["emit", "--quiet", "--session", "s"], outside, repo);
+    assert.equal(ok.stdout, "");
+    assert.equal(ok.status, 0);
+    const written = readdirSync(join(repo, ".provene"));
+    assert.equal(written.length, 1, `receipts written: ${written.join(", ")}`);
+
+    // Silenced is not the same as discarded: the messages are in the error
+    // journal, which is where `doctor` looks when someone asks why no receipt
+    // appeared. A hook that fails invisibly fails for a week.
+    const errors = readFileSync(join(dir, "home", "errors.jsonl"), "utf8");
+    assert.match(errors, /no changes to attest/);
+    assert.match(errors, /--session is required/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+/** The same rule, stated the way a hook actually invokes it. */
+test("a Gemini hook invocation prints nothing even without --quiet", () => {
+  const dir = mkdtempSync(join(tmpdir(), "provene-hookquiet-"));
+  try {
+    execFileSync("git", ["init", "-q", "."], { cwd: dir, stdio: "ignore" });
+    const r = spawnSync(process.execPath, [CLI, "emit", "--stdin", "--agent", "gemini-cli"], {
+      cwd: dir, encoding: "utf8",
+      input: JSON.stringify({ session_id: "g-1", hook_event_name: "SessionEnd" }),
+      env: { ...process.env, PROVENE_HOME: join(dir, "home") },
+    });
+    assert.equal(r.stdout, "");
+    assert.equal(r.stderr, "");
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

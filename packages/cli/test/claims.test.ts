@@ -275,10 +275,15 @@ test("every flag the action and the docs actually pass is accepted", () => {
   // and a receipt into `.provene/` on every `npm test` -- and one such run got
   // committed and pushed. A test suite that dirties its own working tree
   // eventually commits the dirt.
+  // PROVENE_HOME too, and for the same reason one level out: `emit --session s`
+  // and `record --session s` were appending to the developer's REAL journal at
+  // ~/.provene, leaving an `s.jsonl` among their actual sessions and a
+  // permanent orphan for `doctor` to complain about.
   const sandbox = mkdtempSync(join(tmpdir(), "provene-flags-"));
+  const env = { ...process.env, PROVENE_HOME: join(sandbox, "home") };
   try {
     for (const argv of known) {
-      const r = spawnSync(process.execPath, [CLI, ...argv], { cwd: sandbox, encoding: "utf8" });
+      const r = spawnSync(process.execPath, [CLI, ...argv], { cwd: sandbox, encoding: "utf8", env });
       assert.doesNotMatch(r.stdout, /unknown option/, `${argv[0]}: ${r.stdout}`);
     }
   } finally {

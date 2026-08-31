@@ -34,10 +34,20 @@ const out = (s: string): void => { process.stdout.write(s + "\n"); };
  * so guessing would usually be right and occasionally silently wrong, and a
  * receipt naming the wrong agent is worse than one naming none.
  */
-function agentOrExplain(command: string, args: Record<string, string | boolean>): AgentAdapter | undefined {
+function agentOrExplain(
+  command: string,
+  args: Record<string, string | boolean>,
+  quiet = false,
+): AgentAdapter | undefined {
   const asked = args["agent"] === undefined ? undefined : String(args["agent"]);
   const agent = resolveAgent(asked);
   if (agent === undefined) {
+    // On a hook that parses our stdout, even an error message is a protocol
+    // violation. It goes to the error journal instead, where doctor finds it.
+    if (quiet) {
+      recordError("unknown", `emit: unknown agent ${String(asked)}`);
+      return undefined;
+    }
     out(`provene ${command}: unknown agent ${asked}`);
     out(`  known: ${agentNames().join(", ")}`);
     out("  any other agent integrates through the flags in spec/emitters.md");
@@ -65,15 +75,31 @@ function repoRelative(root: string, path: string): string | undefined {
 }
 
 function cmdEmit(args: Record<string, string | boolean>): number {
-  const agent = agentOrExplain("emit", args);
-  if (agent === undefined) return 2;
   // Gemini CLI parses a hook's stdout as JSON and documents anything else as an
   // error. Saying where the receipt went is a courtesy on one agent and a
   // protocol violation on another, so the adapter decides, not this function.
-  const quiet = args["quiet"] === true || (args["stdin"] === true && agent.stdoutMustBeSilent);
-  const say = (line: string): void => { if (!quiet) out(line); };
-
+  //
+  // Silence is decided FIRST, before anything in this function can print. It
+  // was not, and only the success path honoured it: a Gemini session that
+  // ended with nothing to attest -- the ordinary case for a session that only
+  // read files -- printed "no changes to attest" into a channel documented as
+  // JSON-only, and the agent surfaced it to the developer as a system message.
+  // Found by running a real Gemini session, not by reading this file; the test
+  // that existed asserted the hook command CARRIES --quiet, never that --quiet
+  // silences every path through it.
   let sessionId = String(args["session"] ?? process.env["PROVENE_SESSION_ID"] ?? "");
+  const explicitQuiet = args["quiet"] === true;
+  const agent = agentOrExplain("emit", args, explicitQuiet);
+  if (agent === undefined) return 2;
+  const quiet = explicitQuiet || (args["stdin"] === true && agent.stdoutMustBeSilent);
+  // Silenced, not discarded. A diagnosis nobody can see is how a hook fails for
+  // a week without anyone noticing, so under silence every line goes to the
+  // error journal, which is exactly where `provene doctor` looks.
+  const say = (line: string): void => {
+    if (quiet) recordError(sessionId === "" ? "unknown" : sessionId, line);
+    else out(line);
+  };
+
   let hookCwd: string | undefined;
   let hookTool: string | undefined;
   let hookVendor: string | undefined;
@@ -91,21 +117,21 @@ function cmdEmit(args: Record<string, string | boolean>): number {
       hookVendor = agent.vendor;
     }
   }
-  if (sessionId === "") { out("provene emit: --session is required"); return 2; }
+  if (sessionId === "") { say("provene emit: --session is required"); return 2; }
   try {
     if (hookCwd !== undefined) process.chdir(hookCwd);
     const root = repoRoot();
     if (journalInsideRepo(root)) {
-      out(`provene: refusing to emit — the journal is inside this repository (${journalDir()}).`);
-      out("  It holds unredacted commands, including any secrets passed on a command line,");
-      out("  and emitting would record it as a changed file. Set PROVENE_HOME outside the repo.");
+      say(`provene: refusing to emit — the journal is inside this repository (${journalDir()}).`);
+      say("  It holds unredacted commands, including any secrets passed on a command line,");
+      say("  and emitting would record it as a changed file. Set PROVENE_HOME outside the repo.");
       return 1;
     }
     // Resolve to a commit id. A receipt that records "HEAD" as its parent
     // records nothing: HEAD moves, and the binding must name a fixed commit.
     const base = git(["rev-parse", String(args["base"] ?? "HEAD")], root);
     const entries = workingTreeEntries(base, root);
-    if (entries.length === 0) { out("provene: no changes to attest"); return 0; }
+    if (entries.length === 0) { say("provene: no changes to attest"); return 0; }
 
     const salt = deriveSalt(rootCommit());
     const journal = read(sessionId);
@@ -211,8 +237,8 @@ function cmdEmit(args: Record<string, string | boolean>): number {
   } catch (err) {
     // Fail closed toward evidence, open toward the developer.
     recordError(sessionId, err instanceof Error ? err.message : String(err));
-    out(`provene: could not emit a receipt (${err instanceof Error ? err.message : err}).`);
-    out("provene: no receipt was written; a wrong receipt is worse than none. Run `provene doctor`.");
+    say(`provene: could not emit a receipt (${err instanceof Error ? err.message : err}).`);
+    say("provene: no receipt was written; a wrong receipt is worse than none. Run `provene doctor`.");
     return 0;
   }
 }
