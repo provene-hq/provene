@@ -487,7 +487,7 @@ function cmdVerifyAggregate(args: Record<string, string | boolean>): number {
   return outcome.code;
 }
 
-function cmdDoctor(): number {
+function cmdDoctor(args: Record<string, string | boolean>): number {
   // Three states, not two. A checkup that reports FAIL for a normal condition
   // is a checkup people stop running -- the same reason a merge gate with a
   // high false-positive rate gets switched off.
@@ -543,7 +543,10 @@ function cmdDoctor(): number {
 
   // Is the hook actually wired up? doctor exists to answer this: a repository
   // that believes it has coverage and does not is the worst outcome available.
-  const sPath = userSettingsPath();
+  // `init --settings <path>` writes here, so `doctor` has to look here too.
+  // It did not, so the documented way to install into a non-default location
+  // was followed by a checkup that reported the hooks missing.
+  const sPath = args["settings"] !== undefined ? String(args["settings"]) : userSettingsPath();
   try {
     const installed = proveneHooksInstalled(readSettings(sPath));
     if (installed.record && installed.emit) {
@@ -683,7 +686,7 @@ switch (command) {
   case "promote": code = cmdPromote(args); break;
   case "manifest": code = cmdManifest(args); break;
   case "verify-aggregate": code = cmdVerifyAggregate(args); break;
-  case "doctor": code = cmdDoctor(); break;
+  case "doctor": code = cmdDoctor(args); break;
   case "record": code = cmdRecord(args); break;
   case "init": code = cmdInit(args); break;
   case "--version": case "version": out(VERSION); break;
@@ -697,7 +700,7 @@ switch (command) {
     out("  provene promote --base <ref> --attester <id> --out <f>  build the T2 aggregate for CI to sign");
     out("  provene manifest --base <ref> [--out <f>]              the bytes the change digest is taken over");
     out("  provene verify-aggregate --repo <owner/name> --base <ref>  verify the signed T2 aggregate");
-    out("  provene doctor                                         check the local setup");
+    out("  provene doctor [--settings <path>]                     check the local setup");
     code = command === undefined ? 0 : 2;
 }
 process.exit(code);

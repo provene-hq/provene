@@ -198,9 +198,11 @@ action.yml                         the GitHub Action
 ```
 
 ```console
-$ node --test 'packages/cli/test/*.test.ts'                # 104 tests
-$ python3 spec/conformance/runner/run.py                   # 50 checks over 30 fixtures
-$ python3 spec/conformance/runner/validate_receipts.py     # emitter output against the schemas
+$ npm test              # 107 tests
+$ npm run conformance   # 50 checks over 30 fixtures
+$ npm run schema        # emitter output against the schemas
+$ npm run typecheck
+$ npm run lint:action   # an action manifest may hold no expression outside runs:
 ```
 
 Node 22.18 or newer, which is where running a `.ts` file without a flag became the default. On 22.6 through 22.17 the sources need `--experimental-strip-types`. The published npm package is compiled and has no such requirement.
