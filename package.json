@@ -8,6 +8,7 @@
     "test": "node --test 'packages/cli/test/*.test.ts'",
     "conformance": "python3 spec/conformance/runner/run.py || python spec/conformance/runner/run.py",
     "schema": "npm --prefix packages/cli run samples && python spec/conformance/runner/validate_receipts.py .samples spec/examples",
-    "lint:action": "python3 spec/conformance/runner/lint_action.py action.yml || python spec/conformance/runner/lint_action.py action.yml"
+    "lint:action": "python3 spec/conformance/runner/lint_action.py action.yml || python spec/conformance/runner/lint_action.py action.yml",
+    "self-test": "python3 spec/conformance/runner/self_test.py || python spec/conformance/runner/self_test.py"
   }
 }

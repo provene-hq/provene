@@ -16,7 +16,9 @@ $ provene doctor    # confirms they are wired up
 
 It uses `SessionEnd` rather than `Stop` because a `Stop` hook can refuse to let a session finish, and a provenance tool has no business interrupting your work.
 
-After that, work normally. A receipt appears in `.provene/` when a session ends. It names the agent; it records the model only if something told the CLI what it was, because no hook payload carries it and the emitter will not guess.
+After that, work normally. A receipt appears in `.provene/` in your working tree when a session ends, unstaged. Nothing commits it for you: stage and commit it with the change it describes, the same way you would a test.
+
+It names the agent. It records the model only if something told the CLI what it was, because no hook payload carries it and the emitter will not guess.
 
 ## Commands
 

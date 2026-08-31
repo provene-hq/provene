@@ -1,27 +1,59 @@
-"""An action manifest may not contain an expression outside `runs:`.
+"""An action manifest may hold no expression outside `runs:`.
 
-GitHub evaluates every ${{ }} in the manifest when it loads the action,
-including inside an input's description, where contexts like `steps` do not
-exist. One example in a description took the whole action offline.
+GitHub evaluates every ${{ }} in a manifest when it loads the action, including
+inside an input's `description`, where contexts like `steps` do not exist yet.
+One worked example in a description took the whole action offline: the run
+failed with "Unrecognized named-value: 'steps'" before a single step executed.
+
+Standard library only, like everything else in this directory. The first
+version of this file imported PyYAML, so the check written to keep the action
+loadable could not itself run without an install -- which is the same shape of
+mistake it exists to catch, in the tool that catches it.
 """
-import sys, re, yaml
-fail = 0
-for path in sys.argv[1:]:
-    lines = open(path, encoding="utf-8").read().split("\n")
+import sys, re
+
+# Enough of the manifest's shape without a YAML parser: `runs:` at column zero
+# ends the top-level input and metadata section, and a step's id is the only
+# thing we need from the steps themselves.
+TOP_LEVEL_RUNS = re.compile(r"^runs:")
+STEP_ID = re.compile(r"^\s+id:\s*['\"]?([A-Za-z0-9_-]+)['\"]?\s*$")
+STEP_REF = re.compile(r"steps\.([A-Za-z0-9_-]+)\.")
+EXPRESSION = re.compile(r"\$\{\{")
+
+
+def lint(path: str) -> list[str]:
+    problems: list[str] = []
+    with open(path, encoding="utf-8") as fh:
+        lines = fh.read().split("\n")
+
     in_runs = False
-    for i, line in enumerate(lines, 1):
-        if re.match(r"^runs:", line):
+    declared: set[str] = set()
+    for number, line in enumerate(lines, 1):
+        if TOP_LEVEL_RUNS.match(line):
             in_runs = True
-        if not in_runs and "${{" in line:
-            print(f"{path}:{i}: expression outside runs: {line.strip()}")
-            fail = 1
-    # every step that uses steps.<id> must reference an id that exists
-    doc = yaml.safe_load(open(path, encoding="utf-8"))
-    steps = (doc.get("runs") or {}).get("steps") or []
-    ids = {s.get("id") for s in steps if s.get("id")}
-    for ref in set(re.findall(r"steps\.([A-Za-z0-9_-]+)\.", open(path, encoding="utf-8").read())):
-        if ref not in ids:
-            print(f"{path}: references steps.{ref} which no step declares")
-            fail = 1
-print("action manifest lint: " + ("FAILED" if fail else "ok"))
-sys.exit(fail)
+        if not in_runs and EXPRESSION.search(line):
+            problems.append(
+                f"{path}:{number}: expression outside runs:, which GitHub evaluates "
+                f"at manifest load time -- {line.strip()}"
+            )
+        if in_runs:
+            found = STEP_ID.match(line)
+            if found:
+                declared.add(found.group(1))
+
+    for referenced in sorted(set(STEP_REF.findall("\n".join(lines)))):
+        if referenced not in declared:
+            problems.append(f"{path}: references steps.{referenced}, which no step declares")
+    return problems
+
+
+def main(argv: list[str]) -> int:
+    problems = [p for path in argv for p in lint(path)]
+    for p in problems:
+        print(p)
+    print("action manifest lint: " + ("FAILED" if problems else "ok"))
+    return 1 if problems else 0
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv[1:]))

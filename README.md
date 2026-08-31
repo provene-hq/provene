@@ -94,6 +94,8 @@ It uses `SessionEnd` rather than `Stop` because a `Stop` hook can refuse to let 
 
 One more thing worth knowing before you read a receipt: the agent's *model* is recorded only if something tells the CLI what it was. No Claude Code hook payload carries it, and the emitter will not guess, so a receipt written by the hooks alone names the tool and leaves the model out.
 
+The receipt lands in `.provene/` in your working tree, unstaged. Nothing commits it for you: stage and commit it with the change it describes, the same way you would a test. Committing it is what binds the evidence to the history, and a receipt left uncommitted is a receipt nobody will ever see.
+
 Claude Code is the only agent wired up today. The receipt format is not specific to it, and adding a second emitter is a hook script, not a fork.
 
 ## What a receipt proves, and what it does not
@@ -179,7 +181,9 @@ Regenerate that manifest; never verify one you were sent. Verifying a supplied f
 
 ## Status
 
-Pre-alpha. The format is specified and has a conformance suite. The CLI emits, verifies, promotes and checks. The action runs the whole path and signs.
+Pre-alpha. The format is specified and has a conformance suite. The CLI emits, verifies, promotes and checks. The action runs the whole path and asks GitHub to sign the result.
+
+That last step is the one to be careful about. The signing path is built, reviewed and exercised against a stub, and it has never produced a signature against GitHub's real attestation store, because a private repository on a free plan cannot store one. Everything above T0 is therefore correct by construction and unproven in practice. Treat a T2 claim in this README as a description of what the code does, not as a report of something that has happened.
 
 The policy engine in [RFC 0002](spec/rfc/0002-policy-grammar.md) is specified with 38 conformance checks and no implementation, on purpose: writing the evaluator first is how a specification quietly becomes "whatever the code does". Attribution is file-level; the format describes content-anchored spans and no emitter produces them yet.
 
