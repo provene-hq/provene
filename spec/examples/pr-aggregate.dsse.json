@@ -1,13 +1,21 @@
 {
   "payloadType": "application/vnd.in-toto+json",
   "payload": "<base64(canonical JSON of the statement below)>",
-  "signatures": [{ "keyid": "", "sig": "MEQCIF2…" }],
+  "signatures": [
+    {
+      "keyid": "",
+      "sig": "MEQCIF2\u2026"
+    }
+  ],
+  "_note": "Signed by GitHub's attestation action; the platform selects the Sigstore instance from repository visibility, which is why trustRoot.kind is sigstore-github. Stored in the platform's attestation store, not in-tree (RFC 0001 section 9).",
   "_statement_for_readability_only": {
     "_type": "https://in-toto.io/Statement/v1",
     "subject": [
       {
         "name": "acme/api@refs/heads/main",
-        "digest": { "sha256": "e40aa71c8b53d9f206e1cc7b4a9350df82e6b107cc94ad3e5f7802b1da64c9f3" }
+        "digest": {
+          "sha256": "da5d52dfcc358d252d6ed19840f8a4548ea68f1117c84a614516c4418b6da742"
+        }
       }
     ],
     "predicateType": "https://provene.dev/attestation/code-change-aggregate/v0.1",
@@ -16,58 +24,77 @@
       "attestation": {
         "tier": "T2",
         "attester": {
-          "identity": "repo:acme/api:ref:refs/heads/main",
+          "identity": "acme/api/.github/workflows/provene.yml@refs/heads/main",
           "issuer": "https://token.actions.githubusercontent.com"
         },
-        "trustRoot": { "kind": "sigstore-private", "url": "https://fulcio.acme-internal.example" },
-        "transparencyLog": { "published": false }
+        "trustRoot": {
+          "kind": "sigstore-github"
+        },
+        "transparencyLog": {
+          "published": true,
+          "logIndex": 84029135
+        }
+      },
+      "emitter": {
+        "name": "provene",
+        "version": "0.1.0"
       },
       "merge": {
-        "kind": "squash",
+        "kind": "pull-request",
         "pullRequest": "https://github.com/acme/api/pull/883",
-        "mergeCommit": "f10c93aa7e2b58d4106fc3b7d29e58a04c1b7de9",
         "targetRef": "refs/heads/main"
       },
       "binding": {
-        "changeDigest": "e40aa71c8b53d9f206e1cc7b4a9350df82e6b107cc94ad3e5f7802b1da64c9f3",
+        "changeDigest": "da5d52dfcc358d252d6ed19840f8a4548ea68f1117c84a614516c4418b6da742",
         "algorithm": "provene-changeset-v1",
-        "parent": "2b7e0c14da9f38065ce1b7a04d3f92c817ea60bb",
-        "excluded": [".provene/**"]
+        "parent": "6c07e58b47e795f913a72ea785265846a34f260a",
+        "excluded": [
+          ".provene/**"
+        ]
       },
       "constituents": [
         {
-          "receiptDigest": "sha256:5c1a0e7fb32d84906ac7e15b0d29f37a4e8cb210df9375a6e0c14b8827dfa091",
-          "changeDigest": "b71f4c9a2e5d80f316ac47bb90e2d5c8813fa06e4d97cc21b5e0f7a3d9481c62",
-          "tier": "T2",
-          "commit": "6ae10d3fc82b47590ea1cd7b0356f28149c0b7ee"
+          "receiptDigest": "sha256:0619e09433b6093c6fa5ae06f158bba2c3bd73ecc7b3c1426338976e4cace482",
+          "changeDigest": "22c5416ecd6ef57345a20fad748ffce6a186d70deb34b12900f62f61275a94ec",
+          "tier": "T0",
+          "commit": "a0dfdccc9da754299b8be55384e871874b5c3148"
         },
         {
-          "receiptDigest": "sha256:aa30f719c4e5b28160d7ac93f0b41e8572cd60a91b3f7e0428d5cc1746b0e9f2",
-          "changeDigest": "3d90bb147ca62f80e51d7cc0a9b4e3821f7d06ca594e1b380a7fc2d6091e4b57",
-          "tier": "T2",
-          "commit": "c04b7e19aa3d5628f107cb94e0d31a7853fb6cc0"
+          "receiptDigest": "sha256:62ee0419ff339f85681a08703f80ceb24ddeb3d8a24e67125085a3c206fb3e52",
+          "changeDigest": "7f2edaa0b8438adc5cf9c70c365dcbd808de1b035b1c7d509f1b4109ca0ee6b1",
+          "tier": "T0",
+          "commit": "6c07e58b47e795f913a72ea785265846a34f260a"
         }
       ],
       "coverage": {
+        "complete": true,
         "constituentsFound": 2,
-        "commitsInPullRequest": 2,
-        "complete": true
+        "commitsInRange": 2
       },
       "verification": {
         "runs": [
           {
-            "id": "run-merge-1",
+            "id": "ci-test",
             "kind": "test",
             "tool": "vitest",
             "result": "PASSED",
-            "counts": { "passed": 51, "failed": 0, "skipped": 2 },
+            "counts": {
+              "passed": 51,
+              "failed": 0,
+              "skipped": 2
+            },
             "url": "https://github.com/acme/api/actions/runs/19342550",
+            "baseCommit": "6c07e58b47e795f913a72ea785265846a34f260a",
             "observedBy": "ci"
           }
         ],
-        "unverifiedPaths": ["docs/auth.md"]
+        "unverifiedPaths": [
+          "docs/auth.md"
+        ]
       },
-      "humanReview": { "observed": false }
+      "humanReview": {
+        "observed": false
+      }
     }
   }
 }

@@ -7,6 +7,12 @@ on:
   push:
     branches: [main]
 
+# A composite action cannot grant permissions; the calling workflow must.
+permissions:
+  contents: read
+  id-token: write        # mint the OIDC token Sigstore signs against
+  attestations: write    # store the signed attestation
+
 jobs:
   check:
     runs-on: ubuntu-latest
@@ -52,3 +58,6 @@ jobs:
         uses: ./
         with:
           coverage: packages/cli/coverage/lcov.info
+          # The repository signs its own pull requests. Every visitor sees a
+          # real T2 attestation before reading a line of the README.
+          sign: "true"

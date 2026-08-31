@@ -36,6 +36,16 @@ inputs:
       vendored paths a regex cannot recognise.
     required: false
     default: ""
+  sign:
+    description: >-
+      Build a T2 aggregate receipt and sign it with GitHub's attestation action.
+      Requires `permissions: { id-token: write, attestations: write }` in the
+      calling workflow — a composite action cannot grant them itself.
+      Signing is what makes any tier claim above T0 mean anything: everything
+      the local hook produces is a self-attestation by the party who wants the
+      merge.
+    required: false
+    default: "false"
   fail-on-invalid-receipt:
     description: >-
       Fail the check when a receipt is malformed. A forgeable receipt is worse
@@ -119,3 +129,63 @@ runs:
           exit 0
         fi
         exit "$status"
+
+    - name: Build the T2 aggregate
+      id: promote
+      if: inputs.sign == 'true'
+      shell: bash
+      env:
+        PROVENE_CMD: ${{ steps.cli.outputs.cmd }}
+        PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
+        PROVENE_COVERAGE: ${{ inputs.coverage }}
+        PROVENE_PUBLIC: ${{ !github.event.repository.private }}
+        PROVENE_PR: ${{ github.event.pull_request.html_url }}
+      run: |
+        set -uo pipefail
+        args=(promote --head "$GITHUB_SHA"
+              --attester "$GITHUB_WORKFLOW_REF"
+              --issuer "https://token.actions.githubusercontent.com"
+              --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+              --target-ref "$GITHUB_REF"
+              --out "$RUNNER_TEMP/provene-aggregate.json")
+        [ -n "${PROVENE_BASE:-}" ] && args+=(--base "$PROVENE_BASE")
+        [ -n "${PROVENE_COVERAGE:-}" ] && args+=(--coverage "$PROVENE_COVERAGE")
+        [ -n "${PROVENE_PR:-}" ] && args+=(--pull-request "$PROVENE_PR")
+        # Only a public repository publishes to the public transparency log.
+        # Fulcio puts the signer's identity in it, so a private repository that
+        # published would leak its contributors and their activity timing
+        # (RFC 0001 section 11).
+        [ "${PROVENE_PUBLIC:-false}" = "true" ] && args+=(--public)
+
+        $PROVENE_CMD "${args[@]}"
+
+    # GitHub holds the OIDC identity and selects the Sigstore instance by
+    # repository visibility: the public-good instance for public repositories,
+    # its own private instance otherwise. Delegating to it is what keeps this
+    # project free of cryptographic code and runtime dependencies, and it
+    # resolves the private-repository identity problem we could not have solved
+    # ourselves without running Fulcio and Rekor.
+    - name: Sign the aggregate
+      id: attest
+      if: inputs.sign == 'true'
+      uses: actions/attest@v4
+      with:
+        subject-name: ${{ github.repository }}@${{ github.ref_name }}
+        subject-digest: ${{ steps.promote.outputs.subject-digest }}
+        predicate-type: ${{ steps.promote.outputs.predicate-type }}
+        predicate-path: ${{ steps.promote.outputs.predicate-path }}
+
+    - name: Record where the signed receipt went
+      if: inputs.sign == 'true'
+      shell: bash
+      run: |
+        {
+          echo
+          echo "**Signed T2 aggregate:** [${{ steps.attest.outputs.attestation-id }}](${{ steps.attest.outputs.attestation-url }})"
+          echo
+          echo "Verify with:"
+          echo '```'
+          echo "gh attestation verify --repo ${{ github.repository }} --predicate-type ${{ steps.promote.outputs.predicate-type }} <artifact>"
+          echo '```'
+        } >> "$GITHUB_STEP_SUMMARY"
+        echo "provene: signed T2 aggregate ${{ steps.attest.outputs.attestation-id }}"

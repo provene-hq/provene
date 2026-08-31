@@ -28,6 +28,8 @@ ROOT = pathlib.Path(__file__).resolve().parents[2]
 SCHEMAS = {
     "https://provene.dev/attestation/code-change/v0.1":
         ROOT / "schema" / "provene-receipt-v0.1.schema.json",
+    "https://provene.dev/attestation/code-change-aggregate/v0.1":
+        ROOT / "schema" / "provene-aggregate-v0.1.schema.json",
 }
 
 

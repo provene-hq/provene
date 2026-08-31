@@ -8,6 +8,7 @@ import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID, TEST_SHAPES } fro
 import { buildT0, canonicalJson, checkStatement, receiptFileName, type Statement } from "./receipt.ts";
 import { changeDigest } from "./changedigest.ts";
 import { runCheck, annotations, summary } from "./check.ts";
+import { buildAggregate, AGGREGATE_PREDICATE_TYPE } from "./promote.ts";
 import { readStdin, parsePayload, toJournalEntries } from "./hookinput.ts";
 import {
   userSettingsPath, readSettings, withProveneHooks, writeSettings,
@@ -206,6 +207,76 @@ function cmdCheck(args: Record<string, string | boolean>): number {
   return 0;
 }
 
+function cmdPromote(args: Record<string, string | boolean>): number {
+  let root: string;
+  try { root = repoRoot(); } catch { out("provene promote: not inside a git repository"); return 2; }
+
+  const base = git(["rev-parse", String(args["base"] ?? "HEAD")], root);
+  const head = git(["rev-parse", String(args["head"] ?? "HEAD")], root);
+
+  const identity = String(args["attester"] ?? process.env["GITHUB_WORKFLOW_REF"] ?? "");
+  if (identity === "") {
+    out("provene promote: --attester is required (the CI identity that will sign this)");
+    return 2;
+  }
+
+  const result = args["coverage"] !== undefined
+    ? runCheck({ root, base, head, lcovPath: String(args["coverage"]) })
+    : undefined;
+  const unverified = result?.evidence
+    .filter((e) => e.kind === "untested" || (e.kind === "instrumented" && e.covered < e.changed))
+    .map((e) => e.path) ?? [];
+
+  const runs = args["test-result"] !== undefined
+    ? [{
+        id: "ci-test",
+        kind: "test" as const,
+        ...(args["test-tool"] !== undefined ? { tool: String(args["test-tool"]) } : {}),
+        result: String(args["test-result"]).toUpperCase() as "PASSED" | "WARNED" | "FAILED",
+        ...(args["run-url"] !== undefined ? { url: String(args["run-url"]) } : {}),
+      }]
+    : [];
+
+  const { predicate, subjectDigest } = buildAggregate({
+    root, base, head,
+    emitterVersion: VERSION,
+    attester: {
+      identity,
+      ...(args["issuer"] !== undefined ? { issuer: String(args["issuer"]) } : {}),
+    },
+    // Only a public repository publishes to the public transparency log; a
+    // private one must not, because the log carries the signer's identity.
+    publishesToLog: args["public"] === true || args["public"] === "true",
+    ...(args["pull-request"] !== undefined
+      ? { merge: { kind: "pull-request" as const, pullRequest: String(args["pull-request"]),
+                   ...(args["target-ref"] !== undefined ? { targetRef: String(args["target-ref"]) } : {}) } }
+      : {}),
+    runs, unverifiedPaths: unverified,
+  });
+
+  const outPath = args["out"] !== undefined ? String(args["out"]) : undefined;
+  const body = JSON.stringify(predicate, null, 2) + "\n";
+  if (outPath !== undefined) {
+    writeFileSync(outPath, body, "utf8");
+    out(`provene: wrote aggregate predicate to ${outPath}`);
+    out(`  predicate-type ${AGGREGATE_PREDICATE_TYPE}`);
+    out(`  subject-digest sha256:${subjectDigest}`);
+    const c = (predicate as any).coverage;
+    out(`  ${c.constituentsFound} constituent receipt(s) over ${c.commitsInRange} commit(s)` +
+        `${c.complete ? "" : " — coverage incomplete, recorded as such"}`);
+    // Consumed by the workflow, which passes them to the signing action.
+    const ghOut = process.env["GITHUB_OUTPUT"];
+    if (ghOut !== undefined) {
+      writeFileSync(ghOut,
+        `predicate-type=${AGGREGATE_PREDICATE_TYPE}\nsubject-digest=sha256:${subjectDigest}\npredicate-path=${outPath}\n`,
+        { flag: "a" });
+    }
+  } else {
+    process.stdout.write(body);
+  }
+  return 0;
+}
+
 function cmdDoctor(): number {
   // Three states, not two. A checkup that reports FAIL for a normal condition
   // is a checkup people stop running -- the same reason a merge gate with a
@@ -399,6 +470,7 @@ switch (command) {
   case "emit": code = cmdEmit(args); break;
   case "verify": code = cmdVerify(args); break;
   case "check": code = cmdCheck(args); break;
+  case "promote": code = cmdPromote(args); break;
   case "doctor": code = cmdDoctor(); break;
   case "record": code = cmdRecord(args); break;
   case "init": code = cmdInit(args); break;
@@ -410,6 +482,7 @@ switch (command) {
     out("  provene emit   --session <id> [--base <commit>]        write a T0 receipt");
     out("  provene verify <receipt> [--against <commit>]          check integrity, report tier");
     out("  provene check  --base <ref> [--coverage <lcov.info>]   what a reviewer needs to look at");
+    out("  provene promote --base <ref> --attester <id> --out <f>  build the T2 aggregate for CI to sign");
     out("  provene doctor                                         check the local setup");
     code = command === undefined ? 0 : 2;
 }

@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.1.5 |
+| **Version** | 0.1.6 |
 | **Predicate type** | `https://provene.dev/attestation/code-change/v0.1` |
 | **Date** | 2026-08-30 |
 | **Supersedes** | — |
@@ -319,6 +319,12 @@ When a pull request is squashed or rebase-merged, the constituent commits — an
 
 An aggregate receipt is always `T2` or higher: CI is the only party present at the moment the merge commit comes into existence, and it has no stake in the merge.
 
+Its predicate is specified by `provene-aggregate-v0.1.schema.json`.
+
+**Where a signed aggregate lives.** Unlike the per-commit receipts of §8, a signed aggregate is NOT written in-tree. It is produced at pull-request or merge time, when writing to the repository would mean CI committing to the branch under review, and it is stored in the platform's attestation store keyed by subject digest — retrievable with `gh attestation verify` and by the platform API. The in-tree rule exists so that a *local* emitter needs no infrastructure; CI has infrastructure.
+
+**Trust root.** Where the signer delegates the choice of Sigstore instance to the platform — as it does when GitHub selects the public-good instance for public repositories and its private instance otherwise — `trustRoot.kind` is `sigstore-github`. Recording `sigstore-public` or `sigstore-private` there would tell a verifier something the signer does not know.
+
 Constituent per-commit receipts remain in `.provene/` after a squash, so per-commit granularity is preserved as file content even though the commits are gone.
 
 ## 10. Redaction contract (normative)
@@ -369,6 +375,7 @@ Marked for external review; none block a reference implementation.
 
 ## Changelog
 
+- **0.1.6** (2026-08-31) — aggregate receipts given a schema and a storage rule. They had been specified in §9 since v0.1.0 with neither, which the schema round-trip harness reported on its first run. `sigstore-github` added as a trust root for the case where the platform, not the signer, selects the Sigstore instance.
 - **0.1.5** (2026-08-31) — `C` and `T` added to the status letters. `git diff --raw` emits both, so a repository using copies, symlinks or submodules produced receipts its own schema rejected. Found by a reviewer reading the generator in the property tests rather than the code.
 - **0.1.4** (2026-08-31) — `model` is optional and `modelSource` is required only alongside it. Found when wiring the real Claude Code hooks: the payload identifies the tool but not the model, and the previous shape forced an emitter to either invent a model or record a known agent as `unknown`.
 - **0.1.3** (2026-08-30) — added the required `emitter` field. Found when the CLI reported a hardcoded version that had drifted from its package metadata: a receipt named the agent that did the work but nothing about the software that wrote the receipt, so receipts produced by a defective emitter could not be identified afterwards. Sections renumbered from 6.2.
