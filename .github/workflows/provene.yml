@@ -7,7 +7,46 @@ on:
   push:
     branches: [main]
 
+# A composite action cannot grant permissions; the calling workflow must.
+permissions:
+  contents: read
+  id-token: write        # mint the OIDC token Sigstore signs against
+  attestations: write    # store the signed attestation
+
 jobs:
+  # The suite had never run anywhere but Linux, and a reviewer running it on
+  # Windows found a path-separator assertion that had been green here for days.
+  # This project is developed on Windows and its users are wherever they are;
+  # one runner is not a test matrix, it is a habit.
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      # `shell: bash` on every step, Windows included: the runners provide it,
+      # and it means the glob below is expanded the same way on all three
+      # rather than depending on pwsh, cmd and sh agreeing.
+      - run: npm --prefix packages/cli install
+        shell: bash
+      - run: npm --prefix packages/cli run typecheck
+        shell: bash
+      - name: Tests
+        shell: bash
+        working-directory: packages/cli
+        run: node --test 'test/*.test.ts'
+      - name: Conformance suite
+        shell: bash
+        run: |
+          # windows-latest does not reliably put `python3` on PATH.
+          PY=$(command -v python3 || command -v python)
+          "$PY" spec/conformance/runner/run.py
+
   check:
     runs-on: ubuntu-latest
     steps:
@@ -28,6 +67,7 @@ jobs:
           npm --prefix packages/cli run build
 
       - name: Test with coverage
+        id: test
         working-directory: packages/cli
         run: |
           mkdir -p coverage
@@ -39,8 +79,42 @@ jobs:
       - name: Conformance suite
         run: python3 spec/conformance/runner/run.py
 
+      # Does this repository's own tooling do what it says? Every check in here
+      # is a defect that shipped: an npm script that ran one test file of nine,
+      # a lint that needed an install to run, an action manifest that would not
+      # load, and a documented flow nothing executed end to end.
+      - name: Self-test
+        run: python3 spec/conformance/runner/self_test.py
+
+      # The schema existed from day one and nothing checked emitter output
+      # against it, so two defects shipped that the schema itself forbade.
+      - name: Emitted receipts satisfy the schema
+        run: |
+          python3 -m pip install --quiet jsonschema
+          node packages/cli/scripts/emit-samples.ts "$RUNNER_TEMP/samples"
+          python3 spec/conformance/runner/validate_receipts.py "$RUNNER_TEMP/samples" spec/examples
+
       - name: Provene
-        if: github.event_name == 'pull_request'
+        # `!cancelled()` rather than a plain event check: if the test step
+        # failed, the job stops before this step, and the only receipts this
+        # repository would ever produce would be ones recording PASSED. A
+        # receipt that can only say tests passed is not evidence about tests.
+        # Running here on failure records FAILED, which is the more useful
+        # half of the claim.
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         uses: ./
         with:
           coverage: packages/cli/coverage/lcov.info
+          # CI's own observation of its own test step. This is the whole point
+          # of the tier model: the same result asserted by the local hook is
+          # T0, because the party asserting it wants the merge.
+          test-result: ${{ steps.test.outcome == 'success' && 'PASSED' || 'FAILED' }}
+          test-tool: node --test
+          # The repository signs its own pull requests, so every visitor sees a
+          # real T2 attestation before reading a line of the README.
+          #
+          # Conditional on visibility because GitHub's attestation store is
+          # free for public repositories and a paid feature for private ones.
+          # Asking for signing where the platform will refuse it turns every
+          # pull request red for a reason that has nothing to do with the code.
+          sign: ${{ !github.event.repository.private }}

@@ -3,9 +3,9 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.1.4 |
+| **Version** | 0.1.9 |
 | **Predicate type** | `https://provene.dev/attestation/code-change/v0.1` |
-| **Date** | 2026-08-30 |
+| **Date** | 2026-08-31 |
 | **Supersedes** | — |
 | **Depends on** | Threat Model v0.1 (assurance tiers, redaction contract) |
 
@@ -64,7 +64,7 @@ The change digest is computed as follows. Implementations MUST follow it exactly
 
 1. Compute the set of paths that differ between the pre-session tree and the post-session tree.
 2. **Exclude every path matching `.provene/**`.**
-3. For each remaining path, form the line `<status> <path> <preBlob> <postBlob>` where `status` is one of `A`, `M`, `D`, `R`; `path` is the repository-relative path, byte-exact; and `preBlob`/`postBlob` are the git blob object IDs, or the literal `-` where the side does not exist. For a rename, `path` is the post-image path and a second field `<-<prePath>` is appended.
+3. For each remaining path, form the line `<status> <path> <preBlob> <postBlob>` where `status` is one of `A` (added), `M` (modified), `D` (deleted), `R` (renamed), `C` (copied) or `T` (type changed — a file becoming a symlink or submodule, or the reverse); `path` is the repository-relative path, byte-exact; and `preBlob`/`postBlob` are the git blob object IDs, or the literal `-` where the side does not exist. For a rename or a copy, `path` is the post-image path and a second field `<-<prePath>` is appended.
 4. Sort the lines by `path` as raw bytes, ascending. Join with `\n` (no trailing newline). Encode UTF-8.
 5. `changeDigest` = lowercase hex SHA-256 of those bytes.
 
@@ -72,11 +72,33 @@ The change digest is computed as follows. Implementations MUST follow it exactly
 
 The Statement subject MUST be a single entry: `{"name": "<repo-relative change name>", "digest": {"sha256": "<changeDigest>"}}`.
 
+### 4.1.1 The changeset manifest (normative)
+
+The byte string produced by step 4 above is the **changeset manifest**. It is not a derived convenience: it is the pre-image of the digest, and `SHA-256(manifest) == changeDigest` holds by construction.
+
+An implementation MUST be able to write the manifest to a file containing exactly those bytes and nothing else — no trailing newline, no byte-order mark, no re-encoding. An empty change set produces an empty file, whose digest is the SHA-256 of the empty string.
+
+**Rationale.** Without the manifest, a Provene subject digest is unaddressable by any tool but Provene. General-purpose attestation verifiers — `gh attestation verify`, `cosign` — take an *artefact*, hash it, and look up attestations for that hash; a digest over a change set matches no file in the tree, so no such verifier can find the attestation at all. Naming the pre-image as an artefact makes a Provene attestation verifiable with stock tooling, which matters more than any convenience: a receipt that only its own issuer can check is not portable evidence, and portability is the entire claim of this project.
+
+The manifest is reproducible from any checkout of the post-session tree, which is what makes it a binding rather than a hint: a verifier regenerates it from the repository, and equality of the regenerated digest with the signed subject digest is what establishes that the signature covers the work in front of them.
+
+**A verifier MUST regenerate the manifest from the repository it is verifying.** Running a general-purpose attestation verifier against a manifest file it was *given* establishes only that that file was attested; it says nothing about the repository in front of the verifier, because the file did not come from it. Regeneration is the entire binding. An implementation that offers to verify a supplied manifest MUST say so in the same breath.
+
 ### 4.2 Verifying the binding against a commit
 
 To verify a receipt against commit `C`, a verifier MUST recompute the change digest from the diff of `C` against its **first parent**, applying the same exclusion, and compare it to the subject digest. Equality is REQUIRED for the receipt to be considered bound to `C`.
 
 The predicate records `binding.parent` as the git commit ID of the pre-session tree's commit. A verifier SHOULD compare it and MUST NOT fail on mismatch alone: a rebase preserves the change content while replacing the parent. A mismatch with an equal change digest MUST be reported as `rebased`, not as a verification failure. A mismatch in the change digest is always a failure.
+
+### 4.2.1 Ranges (normative)
+
+A receipt covering a **range** rather than a single commit — an aggregate (§9), or any check over `base..head` — MUST compute its change set over `merge-base(base, head)..head`, the three-dot diff, and MUST NOT use the two-dot diff `base..head`.
+
+**Rationale.** A base branch advances while a branch is under review. Two-dot diffing against the advanced tip reports the base branch's own newer commits as *deletions performed by the branch under review* — a receipt saying the author deleted files they never touched. This is not a corner case; it is the normal state of any base branch with more than one contributor. It is also what a reviewer is already looking at: the three-dot diff is what a pull request page shows.
+
+Where a verifier cannot compute a merge base — a shallow clone is the usual reason — it MUST NOT silently fall back to the two-dot result inside a signed artefact without saying so. Emitting the two-dot digest as if it were the range's digest produces a signature that no full clone can reproduce, and no diagnostic explaining why.
+
+Note that this is a no-op in the most common CI configuration: for a `pull_request` event, `actions/checkout` checks out the merge commit, whose merge base with the base tip *is* the base tip. The rule exists for every other case — local use, `push` events, and any workflow that checks out the head commit instead.
 
 ### 4.3 What this deliberately does not survive
 
@@ -319,6 +341,14 @@ When a pull request is squashed or rebase-merged, the constituent commits — an
 
 An aggregate receipt is always `T2` or higher: CI is the only party present at the moment the merge commit comes into existence, and it has no stake in the merge.
 
+**Committed state only.** An aggregate's change set MUST be computed between two commits. It MUST NOT include uncommitted working-tree modifications or untracked files. CI reaches `promote` after its build and test steps have run, so the working tree there routinely contains coverage output, build artefacts and lockfiles a package manager rewrote; signing a digest over that produces a change set no checkout of the commit can reproduce, and therefore a signature guaranteed to fail verification forever.
+
+Its predicate is specified by `provene-aggregate-v0.1.schema.json`.
+
+**Where a signed aggregate lives.** Unlike the per-commit receipts of §8, a signed aggregate is NOT written in-tree. It is produced at pull-request or merge time, when writing to the repository would mean CI committing to the branch under review, and it is stored in the platform's attestation store keyed by subject digest — retrievable with `gh attestation verify` and by the platform API. The in-tree rule exists so that a *local* emitter needs no infrastructure; CI has infrastructure.
+
+**Trust root.** Where the signer delegates the choice of Sigstore instance to the platform — as it does when GitHub selects the public-good instance for public repositories and its private instance otherwise — `trustRoot.kind` is `sigstore-github`. Recording `sigstore-public` or `sigstore-private` there would tell a verifier something the signer does not know.
+
 Constituent per-commit receipts remain in `.provene/` after a squash, so per-commit granularity is preserved as file content even though the commits are gone.
 
 ## 10. Redaction contract (normative)
@@ -355,7 +385,7 @@ See Threat Model v0.1 for the full analysis. In summary: a `T0`/`T1` receipt is 
 
 Hook configuration is within an agent's write scope when stored in the working tree; emitters SHOULD install hook wiring in user-level configuration.
 
-**Concealment resistance is a property of the deployed policy mode, not of this format.** A gate that activates only when a receipt is present has no false positives and no defense against a disabled hook; a gate that requires a receipt on every commit defends against a disabled hook and misfires on dependabot, web-UI edits, reverts and fork merges. Implementations MUST NOT describe receipts as preventing concealment without naming the policy mode assumed. See RFC 0002 and Threat Model v0.2, T-3.
+**Concealment resistance is a property of the deployed policy mode, not of this format.** A gate that activates only when a receipt is present has no false positives and no defense against a disabled hook; a gate that requires a receipt on every commit defends against a disabled hook and misfires on dependabot, web-UI edits, reverts and fork merges. Implementations MUST NOT describe receipts as preventing concealment without naming the policy mode assumed. See RFC 0002 and Threat Model v0.3, T-3.
 
 **Hook failure.** An emitter MUST NOT block, delay, or crash an agent session under any error condition, and MUST NOT emit a partial or inferred receipt to paper over a failure: no receipt is a recoverable state, a wrong receipt is not. Failures MUST be recorded in a durable local error journal outside the repository and surfaced at session end. That journal is a local self-report and is advisory only — it cannot be signed evidence of its own failure.
 
@@ -369,6 +399,11 @@ Marked for external review; none block a reference implementation.
 
 ## Changelog
 
+- **0.1.9** (2026-08-31) — §4.1.1 gains the requirement that a verifier regenerate the manifest rather than verify a supplied one, after a reviewer identified it as the format's only residual footgun. The tool made the mistake structurally impossible in its own path before the specification said so, which is the wrong order.
+- **0.1.8** (2026-08-31) — range semantics made normative (§4.2.1) and aggregates restricted to committed state (§9). Both from a round-6 review finding, both demonstrated by experiment before being adopted: a two-dot diff against an advanced base branch records that branch's commits as deletions by the author under review, and `promote` was diffing CI's working tree, so a build step's coverage output and an npm-rewritten lockfile entered the signed digest. Neither was a corner case; the second was live in this repository's own workflow.
+- **0.1.7** (2026-08-31) — the changeset manifest named as a normative artefact (§4.1.1). The digest's pre-image already existed in every implementation; what was missing was the requirement that it be writable as a file, without which no general-purpose attestation verifier can address a Provene subject digest, because it corresponds to no file in the tree. Found when building verification for the first signed aggregate: we could produce T2 and could not check one.
+- **0.1.6** (2026-08-31) — aggregate receipts given a schema and a storage rule. They had been specified in §9 since v0.1.0 with neither, which the schema round-trip harness reported on its first run. `sigstore-github` added as a trust root for the case where the platform, not the signer, selects the Sigstore instance.
+- **0.1.5** (2026-08-31) — `C` and `T` added to the status letters. `git diff --raw` emits both, so a repository using copies, symlinks or submodules produced receipts its own schema rejected. Found by a reviewer reading the generator in the property tests rather than the code.
 - **0.1.4** (2026-08-31) — `model` is optional and `modelSource` is required only alongside it. Found when wiring the real Claude Code hooks: the payload identifies the tool but not the model, and the previous shape forced an emitter to either invent a model or record a known agent as `unknown`.
 - **0.1.3** (2026-08-30) — added the required `emitter` field. Found when the CLI reported a hardcoded version that had drifted from its package metadata: a receipt named the agent that did the work but nothing about the software that wrote the receipt, so receipts produced by a defective emitter could not be identified afterwards. Sections renumbered from 6.2.
 - **0.1.2** (2026-08-30) — reference implementation. `unattributedPaths` renamed `unverifiedPaths`: the old name invited implementations to compute it from attribution rather than from verification runs, and one did. Added the normative requirement that `changes.files` reproduce the subject digest, after a tampered receipt verified clean.

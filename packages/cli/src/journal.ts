@@ -9,8 +9,9 @@
  * must never be committed; the receipt built from it is the redacted artifact.
  */
 import { appendFileSync, mkdirSync, readFileSync, existsSync, readdirSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 export interface JournalEntry {
   readonly at: string;
@@ -26,8 +27,64 @@ export function journalDir(): string {
   return process.env["PROVENE_HOME"] ?? join(homedir(), ".provene");
 }
 
+/**
+ * The journal holds UNREDACTED commands -- raw argv, including any credentials
+ * an agent passed on a command line. Redaction happens when the receipt is
+ * built, not when the journal is written, precisely so the hook stays fast and
+ * dumb. That is only safe while the journal lives outside every repository.
+ *
+ * If it does not, `emit` records the journal itself as a changed file and the
+ * secrets it holds are committed. Found when a test harness pointed
+ * PROVENE_HOME inside a repository and the receipt listed the journal.
+ */
+export function journalInsideRepo(repoRoot: string): boolean {
+  const dir = resolve(journalDir());
+  const root = resolve(repoRoot);
+  return dir === root || dir.startsWith(root + sep);
+}
+
+/**
+ * Session ids that are safe to put in a filename.
+ *
+ * A session id arrives from a hook payload — JSON this process did not write —
+ * and was interpolated straight into a path. `session_id: "../../../pwned"`
+ * therefore appended to `/home/pwned.jsonl`, and what it appended was the
+ * journal's UNREDACTED contents: raw argv, including any credential an agent
+ * passed on a command line. Demonstrated end to end before this fix, not
+ * argued: one `provene record --stdin` wrote `echo AUTH=supersecret` outside
+ * the journal directory entirely.
+ *
+ * Separators are excluded by the character class, so traversal is not
+ * expressible rather than being stripped after the fact.
+ */
+const SAFE_SESSION_ID = /^[A-Za-z0-9._-]{1,128}$/;
+
+/**
+ * Rejected ids are not dropped and not passed through: they are replaced by a
+ * deterministic name derived from the id itself.
+ *
+ * Dropping would lose a session's evidence to a malformed id — and this hook
+ * must never cost a developer their work. Passing through is the vulnerability.
+ * Hashing keeps the session recordable and keeps repeated hooks in the same
+ * session landing in the same file.
+ *
+ * The name is deliberately dull: letters, digits and a hyphen. The first
+ * version of this used a colon as the separator, which is illegal in a Windows
+ * filename and would have thrown on the platform this project is developed on
+ * — turning a security fix into a crash in the hot path of every hook, for
+ * exactly the reason the reviewer's other finding names.
+ *
+ * A real session id of the form `unsafe-<32 hex>` would collide. That is
+ * accepted: it requires guessing 128 bits, and the alternative shapes cost
+ * either Windows compatibility or visibility to `doctor`.
+ */
+export function safeSessionId(raw: string): string {
+  if (SAFE_SESSION_ID.test(raw)) return raw;
+  return `unsafe-${createHash("sha256").update(raw, "utf8").digest("hex").slice(0, 32)}`;
+}
+
 export function journalPath(sessionId: string): string {
-  return join(journalDir(), "sessions", `${sessionId}.jsonl`);
+  return join(journalDir(), "sessions", `${safeSessionId(sessionId)}.jsonl`);
 }
 
 export function append(sessionId: string, entry: JournalEntry): void {
@@ -56,7 +113,7 @@ export function read(sessionId: string): JournalEntry[] {
  */
 export function markEmitted(sessionId: string, changeDigest: string): void {
   try {
-    const p = join(journalDir(), "sessions", `${sessionId}.emitted`);
+    const p = join(journalDir(), "sessions", `${safeSessionId(sessionId)}.emitted`);
     appendFileSync(p, JSON.stringify({ at: new Date().toISOString(), changeDigest }) + "\n", "utf8");
   } catch { /* advisory only; never fails an emit */ }
 }

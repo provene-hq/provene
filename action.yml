@@ -9,9 +9,20 @@ branding:
 
 inputs:
   version:
-    description: Version of the provene CLI to use.
+    description: >-
+      Fallback only. The action normally runs the CLI bundled at the ref you
+      pinned, with no install at all; this version is used solely when the
+      runner's Node is too old to execute TypeScript sources. Never `latest`:
+      that would mean every consumer's CI executes whatever was published most
+      recently, so one compromised publish reaches every pipeline.
+
+      Left empty, the version is read from the package.json bundled with this
+      action, so the fallback matches the ref you pinned rather than a string
+      that drifts from it. The previous hardcoded default was `0.0.8`, a
+      version that was never published — so the fallback path failed outright,
+      and nothing had ever executed it to notice.
     required: false
-    default: latest
+    default: ""
   base:
     description: >-
       Commit to diff against. Defaults to the pull request's base, which is what
@@ -25,6 +36,58 @@ inputs:
       than implying coverage it does not have.
     required: false
     default: ""
+  exclude:
+    description: >-
+      Comma-separated globs excluded from evidence reporting, for generated or
+      vendored paths a regex cannot recognise.
+    required: false
+    default: ""
+  sign:
+    description: >-
+      Build a T2 aggregate receipt and sign it with GitHub's attestation action.
+      Requires `permissions: { id-token: write, attestations: write }` in the
+      calling workflow — a composite action cannot grant them itself.
+      Signing is what makes any tier claim above T0 mean anything: everything
+      the local hook produces is a self-attestation by the party who wants the
+      merge.
+
+      PLATFORM REQUIREMENT: GitHub's attestation store is available to public
+      repositories on any plan, and to private repositories only on paid plans.
+      A private repository on the free plan fails with "Feature not available
+      for the organization". That failure is deliberately loud -- believing you
+      have a signed T2 receipt when nothing was signed is worse than a red
+      check -- so set sign: false where the platform cannot store it.
+    required: false
+    default: "false"
+  test-result:
+    description: >-
+      The outcome CI observed for this run's tests: PASSED, FAILED or WARNED.
+      Set it from the test step's own outcome. Give the test step an `id`, then
+      pass a workflow expression over `steps.<id>.outcome`; the README shows the
+      exact line. It cannot be shown here: GitHub evaluates every expression in
+      an action manifest, including the ones inside a description, and `steps`
+      is not a context that exists at manifest-load time. An example written out
+      in full here does not document the feature, it stops the action loading
+      at all.
+
+      This is the only route by which independently observed test evidence
+      reaches a signed receipt, and it is the product's central claim: a local
+      receipt is a self-attestation by the party who wants the merge, while CI
+      re-observes the run on a runner that developer does not control.
+
+      Left empty, the aggregate records no verification runs. That is the honest
+      default — this action does not run your tests and must not report an
+      outcome it did not observe — but it means the signed receipt carries no
+      test evidence at all. RFC 0001 section 6.4: an absent entry is
+      UNOBSERVED, never a claim that nothing ran.
+    required: false
+    default: ""
+  test-tool:
+    description: >-
+      What produced the result above (`vitest`, `pytest`, `go test`). Recorded
+      verbatim; nothing infers it.
+    required: false
+    default: ""
   fail-on-invalid-receipt:
     description: >-
       Fail the check when a receipt is malformed. A forgeable receipt is worse
@@ -35,23 +98,103 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install provene
+    - name: Ensure the base commit is present
       shell: bash
-      run: npm install -g proveneio@${{ inputs.version }}
+      env:
+        PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
+      run: |
+        # actions/checkout defaults to fetch-depth 1, so the pull request base is
+        # usually absent and `git rev-parse` on it fails. Fetch just that commit
+        # rather than requiring every consumer to set fetch-depth: 0.
+        if [ -n "${PROVENE_BASE:-}" ] && ! git rev-parse --verify --quiet "$PROVENE_BASE^{commit}" >/dev/null; then
+          git fetch --no-tags --depth=1 origin "$PROVENE_BASE" \
+            || echo "provene: could not fetch the base commit; check will report what it can"
+        fi
+
+    - name: Resolve the provene CLI
+      id: cli
+      shell: bash
+      env:
+        PROVENE_VERSION: ${{ inputs.version }}
+      run: |
+        # Prefer running the CLI that ships INSIDE this action, at whatever ref
+        # you pinned. It has no runtime dependencies, so Node executes the
+        # TypeScript sources directly with no install and no bundler.
+        #
+        # This is the point: installing from npm at run time means one
+        # compromised publish reaches every consumer's CI, in a supply-chain
+        # provenance tool. Pinning the action to a tag or SHA now pins the code
+        # that actually runs.
+        SRC="$GITHUB_ACTION_PATH/packages/cli/src/cli.ts"
+
+        # Probe the capability rather than compare a version.
+        #
+        # This was `node >= 22.6`, because 22.6 is when --experimental-strip-types
+        # arrived. Type stripping only became the default in 22.18.0, so every
+        # runner on 22.6 through 22.17 was sent down the bundled-source path and
+        # died on an unknown file extension, instead of taking the npm fallback
+        # that exists for exactly that case. Running one file answers the
+        # question that a version number only approximates.
+        PROBE="${RUNNER_TEMP:-/tmp}/provene-probe.ts"
+        printf 'const ok: number = 0;\nprocess.exit(ok);\n' > "$PROBE"
+        if [ -f "$SRC" ] && node "$PROBE" >/dev/null 2>&1; then
+          # Two outputs, not one interpolated command string. A single `cmd`
+          # had to be word-split at the point of use to become an argv, so a
+          # runner whose path contains a space -- routine on self-hosted and
+          # Windows runners, e.g. C:\actions runner\_work -- split the script
+          # path in half and node looked for a module called "C:\actions".
+          echo "runner=node" >> "$GITHUB_OUTPUT"
+          echo "script=$SRC" >> "$GITHUB_OUTPUT"
+          echo "provene: running the CLI bundled with this action (node $(node -v))"
+        else
+          # Node too old to strip types. Fall back to a PINNED npm version --
+          # never @latest, which would execute whatever was published most
+          # recently.
+          #
+          # Default to the version bundled with this action, so the fallback
+          # tracks the ref the consumer pinned. A hardcoded default is a second
+          # source of truth for the same fact, and this one had drifted to a
+          # version that does not exist on the registry at all.
+          VERSION="${PROVENE_VERSION:-}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(node -p "require('$GITHUB_ACTION_PATH/packages/cli/package.json').version" 2>/dev/null || echo "")
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "provene: cannot determine which CLI version to install, and this" >&2
+            echo "         runner's Node cannot execute the bundled sources." >&2
+            exit 1
+          fi
+          if ! npm install -g "proveneio@${VERSION}"; then
+            echo "provene: proveneio@${VERSION} could not be installed. The action is" >&2
+            echo "         pinned to a ref whose version is not on the registry." >&2
+            exit 1
+          fi
+          echo "runner=provene" >> "$GITHUB_OUTPUT"
+          echo "script=" >> "$GITHUB_OUTPUT"
+          echo "provene: node $(node -v) cannot run TypeScript sources; installed proveneio@${VERSION}"
+        fi
 
     - name: Check receipts and evidence
       shell: bash
       env:
+        PROVENE_RUNNER: ${{ steps.cli.outputs.runner }}
+        PROVENE_SCRIPT: ${{ steps.cli.outputs.script }}
         PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
         PROVENE_COVERAGE: ${{ inputs.coverage }}
+        PROVENE_EXCLUDE: ${{ inputs.exclude }}
         PROVENE_STRICT: ${{ inputs.fail-on-invalid-receipt }}
       run: |
         set -uo pipefail
         args=(check --annotate github)
         [ -n "${PROVENE_BASE:-}" ] && args+=(--base "$PROVENE_BASE")
         [ -n "${PROVENE_COVERAGE:-}" ] && args+=(--coverage "$PROVENE_COVERAGE")
+        [ -n "${PROVENE_EXCLUDE:-}" ] && args+=(--exclude "$PROVENE_EXCLUDE")
 
-        provene "${args[@]}" | tee "$RUNNER_TEMP/provene.txt"
+        # Built as an array so every element stays one argument regardless of
+        # the characters in it.
+        cli=("$PROVENE_RUNNER")
+        [ -n "${PROVENE_SCRIPT:-}" ] && cli+=("$PROVENE_SCRIPT")
+        "${cli[@]}" "${args[@]}" | tee "$RUNNER_TEMP/provene.txt"
         status=${PIPESTATUS[0]}
 
         {
@@ -67,3 +210,102 @@ runs:
           exit 0
         fi
         exit "$status"
+
+    - name: Build the T2 aggregate
+      id: promote
+      if: inputs.sign == 'true'
+      shell: bash
+      env:
+        PROVENE_RUNNER: ${{ steps.cli.outputs.runner }}
+        PROVENE_SCRIPT: ${{ steps.cli.outputs.script }}
+        PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
+        PROVENE_COVERAGE: ${{ inputs.coverage }}
+        PROVENE_PUBLIC: ${{ !github.event.repository.private }}
+        PROVENE_PR: ${{ github.event.pull_request.html_url }}
+        PROVENE_TEST_RESULT: ${{ inputs.test-result }}
+        PROVENE_TEST_TOOL: ${{ inputs.test-tool }}
+      run: |
+        set -uo pipefail
+        args=(promote --head "$GITHUB_SHA"
+              --attester "$GITHUB_WORKFLOW_REF"
+              --issuer "https://token.actions.githubusercontent.com"
+              --run-url "$GITHUB_SERVER_URL/$GITHUB_REPOSITORY/actions/runs/$GITHUB_RUN_ID"
+              --target-ref "$GITHUB_REF"
+              --out "$RUNNER_TEMP/provene-aggregate.json")
+        [ -n "${PROVENE_BASE:-}" ] && args+=(--base "$PROVENE_BASE")
+        [ -n "${PROVENE_COVERAGE:-}" ] && args+=(--coverage "$PROVENE_COVERAGE")
+        [ -n "${PROVENE_PR:-}" ] && args+=(--pull-request "$PROVENE_PR")
+        # Passed through verbatim, never derived. This action does not run your
+        # tests, so the only outcome it may record is one the caller observed
+        # and stated. An unset value records no run rather than a green one.
+        if [ -n "${PROVENE_TEST_RESULT:-}" ]; then
+          args+=(--test-result "$PROVENE_TEST_RESULT")
+          [ -n "${PROVENE_TEST_TOOL:-}" ] && args+=(--test-tool "$PROVENE_TEST_TOOL")
+        else
+          echo "provene: no test-result input; the signed aggregate will record no" \
+               "verification runs. Set the test-result input to carry CI's own" \
+               "observation into the receipt."
+        fi
+        # Only a public repository publishes to the public transparency log.
+        # Fulcio puts the signer's identity in it, so a private repository that
+        # published would leak its contributors and their activity timing
+        # (RFC 0001 section 11).
+        [ "${PROVENE_PUBLIC:-false}" = "true" ] && args+=(--public)
+
+        cli=("$PROVENE_RUNNER")
+        [ -n "${PROVENE_SCRIPT:-}" ] && cli+=("$PROVENE_SCRIPT")
+        "${cli[@]}" "${args[@]}"
+
+    # GitHub holds the OIDC identity and selects the Sigstore instance by
+    # repository visibility: the public-good instance for public repositories,
+    # its own private instance otherwise. Delegating to it is what keeps this
+    # project free of cryptographic code and runtime dependencies, and it
+    # resolves the private-repository identity problem we could not have solved
+    # ourselves without running Fulcio and Rekor.
+    - name: Sign the aggregate
+      id: attest
+      if: inputs.sign == 'true'
+      uses: actions/attest@v4
+      with:
+        subject-name: ${{ github.repository }}@${{ github.ref_name }}
+        subject-digest: ${{ steps.promote.outputs.subject-digest }}
+        predicate-type: ${{ steps.promote.outputs.predicate-type }}
+        predicate-path: ${{ steps.promote.outputs.predicate-path }}
+
+    - name: Record where the signed receipt went
+      if: inputs.sign == 'true'
+      shell: bash
+      env:
+        PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
+      run: |
+        # Without this constraint, `gh attestation verify` accepts an attestation
+        # signed by ANY workflow in the repository -- so a repository that also
+        # runs an experimental or pull-request-triggered workflow with
+        # id-token: write has more signers than its maintainers think. gh
+        # prepends the host and anchors the match, so the value is the workflow
+        # ref with its @ref suffix removed.
+        SIGNER_WORKFLOW="${GITHUB_WORKFLOW_REF%%@*}"
+        {
+          echo
+          echo "**Signed T2 aggregate:** [${{ steps.attest.outputs.attestation-id }}](${{ steps.attest.outputs.attestation-url }})"
+          echo
+          echo "Verify it from a checkout of \`${{ github.sha }}\`:"
+          echo '```'
+          echo "provene verify-aggregate --repo ${{ github.repository }} \\"
+          echo "  --base ${PROVENE_BASE} --signer-workflow ${SIGNER_WORKFLOW}"
+          echo '```'
+          echo "That recomputes the change set locally and hands it to \`gh attestation verify\`;"
+          echo "the signature is checked by gh, and provene checks that what was signed is"
+          echo "the work in front of you. With stock tooling only:"
+          echo '```'
+          echo "provene manifest --base ${PROVENE_BASE} --out changeset"
+          echo "gh attestation verify changeset --repo ${{ github.repository }} \\"
+          echo "  --predicate-type ${{ steps.promote.outputs.predicate-type }} \\"
+          echo "  --signer-workflow ${SIGNER_WORKFLOW}"
+          echo '```'
+          echo
+          echo "Regenerate the manifest; never verify one you were sent. Verifying a"
+          echo "supplied manifest proves only that that file was attested, not that"
+          echo "this repository matches it."
+        } >> "$GITHUB_STEP_SUMMARY"
+        echo "provene: signed T2 aggregate ${{ steps.attest.outputs.attestation-id }}"
