@@ -335,7 +335,7 @@
             "hunk",
             "file"
           ],
-          "description": "'file' asserts only that the agent touched the file. Emitters must fall back rather than guess."
+          "description": "'file' attributes per whole file via attributedTo. Emitters must fall back rather than guess."
         },
         "files": {
           "type": "array",
@@ -404,6 +404,10 @@
                   "type": "string"
                 },
                 "description": "Identifiers of verification runs covering this path."
+              },
+              "attributedTo": {
+                "const": "agent",
+                "description": "Set only where the emitter OBSERVED this agent session modify the path (RFC 0001 6.4.1). Absent means UNOBSERVED and MUST NOT be read as human-authored. Never set from the path merely appearing in the changeset: changes.files is the whole changeset, including the developer's own edits."
               }
             },
             "allOf": [

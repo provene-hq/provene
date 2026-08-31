@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.1.9 |
+| **Version** | 0.1.10 |
 | **Predicate type** | `https://provene.dev/attestation/code-change/v0.1` |
 | **Date** | 2026-08-31 |
 | **Supersedes** | — |
@@ -206,6 +206,7 @@ Plaintext task or prompt text MUST NOT appear in a receipt.
       "path": "src/auth/session.ts",
       "status": "M",
       "preBlob": "3f1c…", "postBlob": "a07e…",
+      "attributedTo": "agent",
       "attributed": [
         {
           "digest": "sha256:c41d…",
@@ -222,16 +223,37 @@ Plaintext task or prompt text MUST NOT appear in a receipt.
 
 `granularity` is REQUIRED and MUST be `hunk` or `file`.
 
-- **`file`** — asserts only that the agent touched the file. `attributed` MUST be omitted. **This is the only granularity a v0.1 emitter is REQUIRED to produce.**
+- **`file`** — attribution is per whole file, carried by `attributedTo` (below). `attributed` MUST be omitted. **This is the only granularity a v0.1 emitter is REQUIRED to produce.**
 - **`hunk`** — OPTIONAL. `attributed` lists **content-anchored spans**: `digest` is the SHA-256 of the span text, `lines` its length, and `anchorBefore`/`anchorAfter` the digests of the immediately preceding and following lines (omitted at file boundaries).
 
 Emitters MUST fall back to `file` rather than guess. Policies MAY require `hunk`.
+
+#### 6.4.1 `attributedTo` (normative, added in v0.1.10)
+
+`attributedTo` is OPTIONAL on each entry of `changes.files`. Its only permitted value is `"agent"`, naming the agent identified in `predicate.agent`.
+
+- **Present and `"agent"`** — the emitter OBSERVED this agent session modify this path.
+- **Absent** — UNOBSERVED. It MUST NOT be read, reported or displayed as human-authored.
+
+An emitter MUST set `attributedTo` only from a record of the session actually touching the path — a tool-use event, or an equivalent observation. It MUST NOT set it because the path appears in the changeset.
+
+Where `granularity` is `hunk` and a file entry carries a non-empty `attributed` array, that entry MUST also carry `attributedTo: "agent"`; the span-level record and the file-level record cannot disagree.
+
+A consumer counting agent-attributed paths MUST count entries carrying `attributedTo`, and MUST NOT count entries of `changes.files`.
+
+**Why this field exists.** Through v0.1.9 this document said `file` granularity "asserts only that the agent touched the file", while also requiring that `changes.files` be exactly the set of entries the change digest was computed over (below). Both cannot hold. The digest binds a **changeset** — everything that differs between two states of the tree, including whatever the developer wrote themselves in the same working tree — so under the old wording every receipt asserted that the agent had touched files it had never seen. The reference implementation was collecting the attribution record from its session journal and then discarding it, and its `check` command reported "N changed paths carry agent attribution" by counting `changes.files`, which is to say by counting everything. The number was always equal to the number of changed paths, which is exactly what it looks like when a metric measures nothing.
+
+This was invisible while the only emitter was a lifecycle hook that closed the session at the moment it ended, because then the changeset and the agent's work were usually the same set. It became plain when an agent arrived whose sessions cannot be hooked at all and must be imported by hand afterwards (see `spec/emitters.md`), where the working tree at import time routinely holds a great deal the agent never touched.
+
+`changes.files` keeps its meaning and its binding requirement: it is the changeset, and a verifier must be able to recompute the subject digest from it alone. Attribution is now a separate, weaker, explicitly optional claim carried alongside — which is the honest shape, because a receipt always knows the changeset exactly and knows attribution only as well as its emitter was able to observe.
+
+**Migration.** The field is additive and OPTIONAL, so v0.1.9 receipts remain valid. They are read as making no attribution claim at all, which is the correct reading of a receipt written by an emitter that never recorded one. Consumers that counted `changes.files` were over-reporting and MUST be corrected; a consumer updated ahead of its emitters will report zero attributed paths rather than a wrong number, and zero is the true value until an emitter starts writing the field.
 
 **Rationale for content anchoring.** Spans are located by content, not by position. Inserting a line above an attributed span does not invalidate it; editing the text *inside* the span does invalidate it, which is correct — the text is no longer what the agent produced. Positional line ranges have neither property: any edit anywhere above them silently shifts every subsequent range, so a positional record is wrong far more often than it is detectably wrong. Content anchoring requires hashing text and nothing else — no parsing, no language awareness, no syntax tree.
 
 **Rationale for attribution at all.** Path-scoped policy is incorrect on mixed-authorship files without it: a rule requiring human review under `src/crypto/**` is wrong if it fires because an agent fixed a typo elsewhere in a 2,000-line file, and wrong again if it misses an agent edit inside a mostly-human one. Coarse attribution is a false-positive engine in exactly the paths where policy matters most, and a gate with a high false-positive rate is a gate that gets switched off.
 
-Regions not listed in `attributed` are **unobserved**. They MUST NOT be described as human-authored.
+Regions not listed in `attributed` are **unobserved**. They MUST NOT be described as human-authored. The same holds one level up: a file entry without `attributedTo` is unobserved, not human-written.
 
 **`changes.files` MUST be exactly the set of entries the change digest was computed over, and a verifier MUST confirm this by recomputing the digest from `changes.files` alone.** Without that check the readable half of a receipt is unbound from the signed half: an attacker can rewrite recorded blob IDs, paths or statuses, and the receipt still verifies against the working tree because the subject digest is recomputed from the tree rather than from what the receipt says. This was found by tampering with a receipt produced by the reference implementation, which reported it as well formed.
 
@@ -398,6 +420,8 @@ Marked for external review; none block a reference implementation.
 3. **Policy grammar.** Not specified here. It is the paid surface and belongs in RFC 0002, which must also specify the three gate modes (`conditional`, `required-with-exemptions`, `enrolled`) that determine whether a deployment resists concealment at all.
 
 ## Changelog
+
+- **0.1.10** (2026-08-31) — §6.4.1 adds `attributedTo`. Through 0.1.9 the specification claimed `file` granularity asserted the agent touched a file while also requiring `changes.files` to be the whole changeset; both cannot hold, so every receipt asserted the agent had touched files it never saw. The reference implementation had been computing attribution from its journal and discarding it, and reporting a count that was equal to the number of changed paths by construction. Additive and optional: 0.1.9 receipts remain valid and are read as making no attribution claim, which is what they were.
 
 - **0.1.9** (2026-08-31) — §4.1.1 gains the requirement that a verifier regenerate the manifest rather than verify a supplied one, after a reviewer identified it as the format's only residual footgun. The tool made the mistake structurally impossible in its own path before the specification said so, which is the wrong order.
 - **0.1.8** (2026-08-31) — range semantics made normative (§4.2.1) and aggregates restricted to committed state (§9). Both from a round-6 review finding, both demonstrated by experiment before being adopted: a two-dot diff against an advanced base branch records that branch's commits as deletions by the author under review, and `promote` was diffing CI's working tree, so a build step's coverage output and an npm-rewritten lockfile entered the signed digest. Neither was a corner case; the second was live in this repository's own workflow.
