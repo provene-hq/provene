@@ -755,8 +755,8 @@ function cmdInit(args: Record<string, string | boolean>): number {
   if (backup !== undefined) out(`  previous settings backed up to ${backup}`);
   out("");
   const recordEvents = agent.hooks.filter((h) => h.command === "record").map((h) => h.event);
-  out(`  ${recordEvents.join(" and ")} ${recordEvents.length > 1 ? "append" : "appends"} to a session`);
-  out("  journal outside this repository.");
+  const verb = recordEvents.length > 1 ? "append" : "appends";
+  out(`  ${recordEvents.join(" and ")} ${verb} to a session journal outside this repository.`);
   out("  SessionEnd writes the receipt. SessionEnd is used rather than a blocking");
   out("  event because the emitter must never be able to interrupt your work.");
   out("");

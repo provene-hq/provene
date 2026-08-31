@@ -1,0 +1,136 @@
+{
+  "_type": "https://in-toto.io/Statement/v1",
+  "subject": [
+    {
+      "name": "s@main",
+      "digest": {
+        "sha256": "5ef1beb4a028cb1d5e42ae4a60de9825a38f941a2c10332eb01093b7d1d2b7df"
+      }
+    }
+  ],
+  "predicateType": "https://provene.dev/attestation/code-change/v0.1",
+  "predicate": {
+    "provene": "0.1",
+    "attestation": {
+      "tier": "T0",
+      "trustRoot": {
+        "kind": "none"
+      },
+      "transparencyLog": {
+        "published": false
+      }
+    },
+    "agent": {
+      "tool": "t",
+      "vendor": "v",
+      "toolVersion": "1",
+      "model": "m",
+      "modelSource": "reported"
+    },
+    "emitter": {
+      "name": "provene",
+      "version": "0.5.1"
+    },
+    "task": {
+      "ref": "u",
+      "digest": "hmac-sha256:1e424e3cb6f119b1c134b0e405adf371f127159e647708bea83518fbc7acba26",
+      "digestScope": "repo",
+      "keySource": "root-commit"
+    },
+    "session": {
+      "id": "s",
+      "startedAt": "2026-08-31T07:32:34.751Z",
+      "endedAt": "2026-08-31T07:38:11.389Z",
+      "toolCalls": 3
+    },
+    "binding": {
+      "changeDigest": "5ef1beb4a028cb1d5e42ae4a60de9825a38f941a2c10332eb01093b7d1d2b7df",
+      "algorithm": "provene-changeset-v1",
+      "parent": "13ecc469343a9ff63372c1493c98179e5c271663",
+      "excluded": [
+        ".provene/"
+      ]
+    },
+    "changes": {
+      "granularity": "file",
+      "files": [
+        {
+          "path": "o.json",
+          "status": "M",
+          "preBlob": "831bd227b819c4cedc62dc2286400e9ff783f685",
+          "postBlob": "a828c53e671a507d364ae86455037afe13b19f8b",
+          "verifiedBy": []
+        },
+        {
+          "path": "packages/cli/src/cli.ts",
+          "status": "M",
+          "preBlob": "4c71f78ee0f2c380af1a4cd63ed129b460decf11",
+          "postBlob": "f2ddd5ad6de2787e65412af2d6045a263ee65a30",
+          "verifiedBy": []
+        }
+      ]
+    },
+    "commands": [
+      {
+        "argv0": "npm",
+        "shape": "npm test",
+        "argvDigest": "hmac-sha256:10dbf22d19990e9eb7618f005364d4cd4c69643a0d47b38a103d66abc0ed2710",
+        "exitCode": 0,
+        "durationMs": 1,
+        "observedBy": "local"
+      },
+      {
+        "argv0": "npm",
+        "shape": "npm test",
+        "argvDigest": "hmac-sha256:10dbf22d19990e9eb7618f005364d4cd4c69643a0d47b38a103d66abc0ed2710",
+        "exitCode": 0,
+        "durationMs": 1,
+        "observedBy": "local"
+      },
+      {
+        "argv0": "npm",
+        "shape": "npm test",
+        "argvDigest": "hmac-sha256:10dbf22d19990e9eb7618f005364d4cd4c69643a0d47b38a103d66abc0ed2710",
+        "exitCode": 0,
+        "durationMs": 1,
+        "observedBy": "local"
+      }
+    ],
+    "verification": {
+      "runs": [
+        {
+          "id": "local-0",
+          "kind": "test",
+          "tool": "npm",
+          "result": "PASSED",
+          "observedBy": "local"
+        },
+        {
+          "id": "local-1",
+          "kind": "test",
+          "tool": "npm",
+          "result": "PASSED",
+          "observedBy": "local"
+        },
+        {
+          "id": "local-2",
+          "kind": "test",
+          "tool": "npm",
+          "result": "PASSED",
+          "observedBy": "local"
+        }
+      ],
+      "unverifiedPaths": [
+        "o.json",
+        "packages/cli/src/cli.ts"
+      ]
+    },
+    "humanReview": {
+      "observed": false
+    },
+    "redaction": {
+      "pathsExcluded": false,
+      "allowlistId": "provene-default-v1"
+    }
+  }
+}

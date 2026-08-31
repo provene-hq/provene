@@ -15,7 +15,7 @@
   },
   "emitter": {
     "name": "provene",
-    "version": "0.5.0"
+    "version": "0.5.1"
   },
   "merge": {
     "kind": "pull-request",
@@ -25,7 +25,7 @@
   "binding": {
     "changeDigest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
     "algorithm": "provene-changeset-v1",
-    "parent": "2c5fd90652e233655dbd02d555fed6bf63deacab",
+    "parent": "13ecc469343a9ff63372c1493c98179e5c271663",
     "excluded": [
       ".provene/**"
     ]
@@ -44,7 +44,7 @@
         "tool": "vitest",
         "result": "PASSED",
         "url": "u",
-        "baseCommit": "2c5fd90652e233655dbd02d555fed6bf63deacab",
+        "baseCommit": "13ecc469343a9ff63372c1493c98179e5c271663",
         "observedBy": "ci"
       }
     ],
