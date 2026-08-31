@@ -14,6 +14,7 @@ import { writeManifest, ghVerify, checkAggregate, decideVerification } from "./a
 import { readStdin, parsePayload, sessionIdOf } from "./hookinput.ts";
 import { resolveAgent, agentNames, hookAgents, type AgentAdapter } from "./agents.ts";
 import { readTranscript, antigravityEntries } from "./antigravity.ts";
+import { normalizePath, isWithin } from "./paths.ts";
 import {
   userSettingsPath, readSettings, withProveneHooks, writeSettings,
   proveneHooksInstalled, hookCommand,
@@ -59,7 +60,7 @@ function agentOrExplain(
 function absoluteish(cwd: string | undefined, path: string): string {
   const rooted = /^([A-Za-z]:[\\/]|[\\/])/.test(path);
   if (rooted || cwd === undefined || cwd === "") return path;
-  return `${cwd.replace(/[\\/]+$/, "")}/${path}`;
+  return normalizePath(`${cwd}/${path}`);
 }
 
 /**
@@ -70,15 +71,17 @@ function absoluteish(cwd: string | undefined, path: string): string {
  * matches every time and looks exactly like an agent that edited nothing.
  */
 function repoRelative(root: string, path: string): string | undefined {
-  const norm = (p: string): string => p.replace(/\\/g, "/").replace(/\/+$/, "");
-  const a = norm(path);
-  const b = norm(root);
-  const [ca, cb] = process.platform === "win32" ? [a.toLowerCase(), b.toLowerCase()] : [a, b];
-  if (ca === cb) return "";
-  if (ca.startsWith(cb + "/")) return a.slice(b.length + 1);
-  // Already relative, or somewhere else entirely. A path that is not under the
-  // root is not part of this change and is dropped rather than recorded raw.
-  return a.includes(":") || a.startsWith("/") ? undefined : a;
+  const ci = process.platform === "win32";
+  const a = normalizePath(path);
+  const b = normalizePath(root);
+  if (!isWithin(a, b, ci)) {
+    // Somewhere else entirely, or still relative because no directory was
+    // recorded. A rooted path outside this repository is not part of the
+    // change and is dropped; a relative one is passed through, since git
+    // speaks the same relative language and the caller may still match it.
+    return /^(\/|[A-Za-z]:)/.test(a) ? undefined : a;
+  }
+  return a.length === b.length ? "" : a.slice(b.length + 1);
 }
 
 function cmdEmit(args: Record<string, string | boolean>): number {

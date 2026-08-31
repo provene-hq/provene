@@ -36,6 +36,7 @@
  */
 import { readFileSync } from "node:fs";
 import type { JournalEntry } from "./journal.ts";
+import { isWithin } from "./paths.ts";
 
 /** One line of the transcript. Every field optional: this is a log we do not own. */
 interface Step {
@@ -160,14 +161,12 @@ export interface TranscriptOptions {
   readonly caseInsensitive?: boolean;
 }
 
-const normalize = (p: string): string => p.replace(/\\/g, "/").replace(/\/+$/, "");
-
-export function withinRepo(path: string, root: string, caseInsensitive: boolean): boolean {
-  let a = normalize(path);
-  let b = normalize(root);
-  if (caseInsensitive) { a = a.toLowerCase(); b = b.toLowerCase(); }
-  return a === b || a.startsWith(b + "/");
-}
+/**
+ * A transcript names files with whatever the model wrote, which includes `..`.
+ * Resolving segments is the whole job here -- see paths.ts.
+ */
+export const withinRepo = (path: string, root: string, caseInsensitive: boolean): boolean =>
+  isWithin(path, root, caseInsensitive);
 
 /**
  * Maps a whole transcript to journal entries.
