@@ -54,6 +54,20 @@ export interface GhResult {
   /** True only when gh exited zero. Nothing else in this module may set it. */
   readonly verified: boolean;
   readonly ran: boolean;
+  /**
+   * The verifier ran and found nothing to check.
+   *
+   * "No attestation covers this change set" and "an attestation covers it and
+   * is bad" are different facts about the world, and only the second is a
+   * signature failure. Reporting absence as a failed signature tells someone
+   * their evidence is forged when the truth is that they have none — which is
+   * the same multi-state-into-binary collapse this project has now made four
+   * times, caught here in live output rather than by review.
+   *
+   * A 404 also covers "you cannot see this repository's attestations", so the
+   * message says both rather than guessing which.
+   */
+  readonly noAttestation: boolean;
   readonly message: string;
   /** Best effort, for reporting only. Empty is not a failure. */
   readonly statements: readonly Statement[];
@@ -109,6 +123,18 @@ export function parseGhOutput(stdout: string): { statements: Statement[]; identi
   return { statements, identities };
 }
 
+/**
+ * Does this verifier failure mean "nothing is signed" rather than "the
+ * signature is bad"?
+ *
+ * Exported and pure so the distinction can be tested on every platform. The
+ * stub-binary tests that prove the wiring cannot run on Windows, and this is
+ * the judgement worth pinning, not the plumbing around it.
+ */
+export function meansNoAttestation(stderr: string): boolean {
+  return /HTTP 404\b/.test(stderr) || /no attestations? (was |were )?found/i.test(stderr);
+}
+
 export function ghVerify(opts: GhVerifyOptions): GhResult {
   const argv = [
     "attestation", "verify", opts.manifestPath,
@@ -135,7 +161,7 @@ export function ghVerify(opts: GhVerifyOptions): GhResult {
     // the verifier was missing.
     if (e.code === "ENOENT") {
       return {
-        verified: false, ran: false, statements: [], identities: [],
+        verified: false, ran: false, noAttestation: false, statements: [], identities: [],
         message: "the GitHub CLI (gh) is not installed, so the signature could not be checked. " +
                  "Provene does not implement signature verification itself; install gh " +
                  "(https://cli.github.com) and run `gh auth login`.",
@@ -144,11 +170,12 @@ export function ghVerify(opts: GhVerifyOptions): GhResult {
     const stderr = e.stderr === undefined ? "" : String(e.stderr).trim();
     return {
       verified: false, ran: true, statements: [], identities: [],
+      noAttestation: meansNoAttestation(stderr),
       message: stderr === "" ? `gh attestation verify exited ${e.status ?? "non-zero"}` : stderr,
     };
   }
   const { statements, identities } = parseGhOutput(stdout);
-  return { verified: true, ran: true, statements, identities, message: "" };
+  return { verified: true, ran: true, noAttestation: false, statements, identities, message: "" };
 }
 
 export interface AggregateCheck {

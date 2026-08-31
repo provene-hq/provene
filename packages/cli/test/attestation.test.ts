@@ -12,10 +12,10 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { readFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
-import { writeManifest, parseGhOutput, checkAggregate, ghVerify } from "../src/attestation.ts";
+import { writeManifest, parseGhOutput, checkAggregate, ghVerify, meansNoAttestation } from "../src/attestation.ts";
 import { changeDigest, type ChangeEntry } from "../src/changedigest.ts";
 import { AGGREGATE_PREDICATE_TYPE } from "../src/promote.ts";
 import { STATEMENT_TYPE } from "../src/receipt.ts";
@@ -25,6 +25,8 @@ const entry = (path: string, status: ChangeEntry["status"] = "M"): ChangeEntry =
 });
 const scratch = (): string => mkdtempSync(join(tmpdir(), "provene-test-"));
 const sha256 = (b: Buffer): string => createHash("sha256").update(b).digest("hex");
+// The stub verifiers below are shell scripts, which Node cannot exec on Windows.
+const onWindows = process.platform === "win32";
 
 test("the manifest's sha256 is the change digest", () => {
   for (const entries of [
@@ -59,6 +61,62 @@ test("a missing verifier is reported as unchecked, never as verified or failed",
   assert.equal(r.verified, false);
   assert.equal(r.ran, false);
   assert.match(r.message, /not installed/);
+});
+
+test("absence of an attestation is not a failed signature", { skip: onWindows }, () => {
+  const dir = scratch();
+  // Stand-ins for what gh actually printed the first time this was run against
+  // a repository nothing had signed: an HTTP 404 from the attestations
+  // endpoint. Reported as a signature failure, it says the evidence is bad
+  // when the truth is that there is none.
+  for (const stderr of [
+    "Error: HTTP 404: Not Found (https://api.github.com/repos/o/n/attestations/sha256:aa)",
+    "✗ no attestations found",
+    "no attestations were found for subject",
+  ]) {
+    const bin = join(dir, `gh-${Buffer.from(stderr).toString("hex").slice(0, 8)}.sh`);
+    writeFileSync(bin, `#!/bin/sh\necho ${JSON.stringify(stderr)} >&2\nexit 1\n`, { mode: 0o755 });
+    const r = ghVerify({ manifestPath: "x", repo: "o/n", predicateType: AGGREGATE_PREDICATE_TYPE, bin });
+    assert.equal(r.verified, false);
+    assert.equal(r.ran, true);
+    assert.equal(r.noAttestation, true, `not detected as absence: ${stderr}`);
+  }
+});
+
+test("a real verification failure is not mistaken for absence", { skip: onWindows }, () => {
+  const dir = scratch();
+  for (const stderr of [
+    "✗ verification failed: certificate identity mismatch",
+    "Error: HTTP 403: Forbidden",
+    "signature verification failed",
+  ]) {
+    const bin = join(dir, `bad-${Buffer.from(stderr).toString("hex").slice(0, 8)}.sh`);
+    writeFileSync(bin, `#!/bin/sh\necho ${JSON.stringify(stderr)} >&2\nexit 1\n`, { mode: 0o755 });
+    const r = ghVerify({ manifestPath: "x", repo: "o/n", predicateType: AGGREGATE_PREDICATE_TYPE, bin });
+    assert.equal(r.verified, false);
+    assert.equal(r.noAttestation, false, `wrongly treated as absence: ${stderr}`);
+  }
+});
+
+test("the absence/failure distinction itself, on every platform", () => {
+  // Absence. The first string is what gh actually printed the first time this
+  // was run against a repository nothing had ever signed.
+  for (const stderr of [
+    "Error: HTTP 404: Not Found (https://api.github.com/repos/o/n/attestations/sha256:aa)",
+    "\u2717 no attestations found",
+    "no attestations were found for subject",
+    "No attestation found",
+  ]) assert.equal(meansNoAttestation(stderr), true, `absence not detected: ${stderr}`);
+
+  // A real failure. Treating any of these as absence would tell someone their
+  // evidence is merely missing when it is present and bad.
+  for (const stderr of [
+    "\u2717 verification failed: certificate identity mismatch",
+    "Error: HTTP 403: Forbidden",
+    "signature verification failed",
+    "Error: HTTP 4040: Not A Real Status",
+    "the attestation found does not match the expected predicate type",
+  ]) assert.equal(meansNoAttestation(stderr), false, `wrongly read as absence: ${stderr}`);
 });
 
 const statement = (over: Record<string, unknown> = {}, pred: Record<string, unknown> = {}) => ({
