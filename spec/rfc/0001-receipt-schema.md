@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.1.3 |
+| **Version** | 0.1.4 |
 | **Predicate type** | `https://provene.dev/attestation/code-change/v0.1` |
 | **Date** | 2026-08-30 |
 | **Supersedes** | — |
@@ -131,7 +131,9 @@ A change digest does not survive a squash, a rebase that resolves conflicts, or 
 }
 ```
 
-`modelSource` MUST be `reported` (the tool supplied it) or `configured` (read from local configuration). A model identifier that the emitter inferred MUST NOT be recorded.
+`modelSource` MUST be `reported` (the tool supplied it) or `configured` (read from local configuration), and is REQUIRED whenever `model` is present. A model identifier that the emitter inferred MUST NOT be recorded.
+
+`model` itself is OPTIONAL, because an emitter can legitimately know *which agent* produced a change without knowing *which model* it used — a Claude Code hook payload names neither, but the fact that the payload arrived through that tool's hook identifies the tool. Omitting `model` is the honest encoding of that; inventing one, or defaulting the tool to `unknown` when it is in fact known, is not.
 
 ### 6.2 Emitter
 
@@ -367,6 +369,7 @@ Marked for external review; none block a reference implementation.
 
 ## Changelog
 
+- **0.1.4** (2026-08-31) — `model` is optional and `modelSource` is required only alongside it. Found when wiring the real Claude Code hooks: the payload identifies the tool but not the model, and the previous shape forced an emitter to either invent a model or record a known agent as `unknown`.
 - **0.1.3** (2026-08-30) — added the required `emitter` field. Found when the CLI reported a hardcoded version that had drifted from its package metadata: a receipt named the agent that did the work but nothing about the software that wrote the receipt, so receipts produced by a defective emitter could not be identified afterwards. Sections renumbered from 6.2.
 - **0.1.2** (2026-08-30) — reference implementation. `unattributedPaths` renamed `unverifiedPaths`: the old name invited implementations to compute it from attribution rather than from verification runs, and one did. Added the normative requirement that `changes.files` reproduce the subject digest, after a tampered receipt verified clean.
 - **0.1.1** (2026-08-30) — round-3 review. Content-anchored attribution replaces line ranges; `file` is the only required granularity. `verification.runs[].baseCommit` added against cross-branch replay of verification evidence. Filenames declare encoding (`.statement.json` / `.dsse.json`). Task digest salt derived from the root commit, described as a salt rather than a key, with `keySource` recorded. Hook-failure semantics and the policy-mode scoping of concealment resistance added to §13.

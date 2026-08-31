@@ -184,8 +184,7 @@
       "type": "object",
       "additionalProperties": true,
       "required": [
-        "tool",
-        "modelSource"
+        "tool"
       ],
       "properties": {
         "vendor": {
@@ -206,8 +205,13 @@
             "reported",
             "configured"
           ],
-          "description": "How the model identifier was obtained. Inferred identifiers must not be recorded."
+          "description": "How the model identifier was obtained. Required whenever `model` is present; absent when the emitter genuinely does not know the model, which is the case for a Claude Code hook payload. Inferred identifiers must not be recorded."
         }
+      },
+      "dependentRequired": {
+        "model": [
+          "modelSource"
+        ]
       }
     },
     "emitter": {

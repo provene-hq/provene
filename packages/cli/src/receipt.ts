@@ -20,7 +20,7 @@ export interface BuildInput {
   readonly entries: readonly ChangeEntry[];
   readonly parent: string;
   readonly agent: { vendor?: string; tool: string; toolVersion?: string;
-                    model?: string; modelSource: "reported" | "configured" };
+                    model?: string; modelSource?: "reported" | "configured" };
   readonly task?: { ref?: string; sessionRef?: string; digest?: string };
   readonly session?: { id: string; startedAt: string; endedAt: string; toolCalls: number };
   readonly emitter: { name: string; version: string };

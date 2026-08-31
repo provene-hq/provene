@@ -29,7 +29,7 @@
     },
     "emitter": {
       "name": "provene",
-      "version": "0.0.2"
+      "version": "0.0.4"
     },
     "task": {
       "ref": "https://github.com/acme/api/issues/412",

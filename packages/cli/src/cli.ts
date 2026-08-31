@@ -24,10 +24,16 @@ const out = (s: string): void => { process.stdout.write(s + "\n"); };
 function cmdEmit(args: Record<string, string | boolean>): number {
   let sessionId = String(args["session"] ?? process.env["PROVENE_SESSION_ID"] ?? "");
   let hookCwd: string | undefined;
+  let hookTool: string | undefined;
   if (args["stdin"] === true) {
     const payload = parsePayload(readStdin());
     if (payload?.session_id !== undefined) sessionId = payload.session_id;
     if (payload?.cwd !== undefined) hookCwd = payload.cwd;
+    // The payload arrived through a Claude Code hook, so the agent is known even
+    // though the payload never names it. Without this every hook-emitted receipt
+    // would record agent.tool as "unknown", which is the one thing a receipt
+    // exists to say.
+    if (payload?.hook_event_name !== undefined) hookTool = "claude-code";
   }
   if (sessionId === "") { out("provene emit: --session is required"); return 2; }
   try {
@@ -57,9 +63,12 @@ function cmdEmit(args: Record<string, string | boolean>): number {
       subjectName: `${args["subject"] ?? "workspace"}`,
       entries, parent: base,
       agent: {
-        tool: String(args["tool"] ?? "unknown"),
-        ...(args["model"] !== undefined ? { model: String(args["model"]) } : {}),
-        modelSource: "reported",
+        tool: String(args["tool"] ?? hookTool ?? "unknown"),
+        // The hook payload does not carry the model, and we do not guess:
+        // modelSource is only meaningful when a model is actually recorded.
+        ...(args["model"] !== undefined
+          ? { model: String(args["model"]), modelSource: "reported" as const }
+          : {}),
       },
       ...(task !== undefined ? { task } : {}),
       emitter: { name: "provene", version: VERSION },
