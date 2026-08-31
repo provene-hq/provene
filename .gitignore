@@ -17,3 +17,6 @@ planning/
 
 # Coverage reports are build output.
 packages/cli/coverage/
+
+# Sample receipts generated for schema validation.
+.samples/

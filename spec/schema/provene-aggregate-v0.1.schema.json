@@ -1,0 +1,158 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://provene.dev/schema/aggregate/v0.1.json",
+  "title": "Provene Aggregate Receipt Predicate v0.1",
+  "description": "Predicate body for predicateType https://provene.dev/attestation/code-change-aggregate/v0.1 (RFC 0001 section 9). Emitted by CI at merge or pull-request time, covering the constituent per-commit receipts. Unknown properties are permitted: verifiers must ignore fields they do not recognise.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["provene", "attestation", "emitter", "binding", "constituents", "coverage"],
+  "properties": {
+    "provene": { "const": "0.1" },
+
+    "attestation": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["tier", "attester", "trustRoot", "transparencyLog"],
+      "description": "An aggregate is produced by CI, which is the only party present when a merge result comes into existence. It is therefore never below T2.",
+      "properties": {
+        "tier": { "enum": ["T2", "T3"] },
+        "attester": {
+          "type": "object",
+          "required": ["identity"],
+          "properties": {
+            "identity": { "type": "string", "minLength": 1 },
+            "issuer": { "type": "string", "format": "uri" }
+          }
+        },
+        "trustRoot": {
+          "type": "object",
+          "required": ["kind"],
+          "properties": {
+            "kind": { "enum": ["sigstore-public", "sigstore-private", "sigstore-github", "ssh", "x509"] },
+            "url": { "type": "string", "format": "uri" }
+          },
+          "description": "sigstore-github means the signer let GitHub select the instance by repository visibility: public-good Sigstore for public repositories, GitHub's private instance otherwise. Recorded as its own kind because the signer did not choose, and a verifier should not be told otherwise."
+        },
+        "transparencyLog": {
+          "type": "object",
+          "required": ["published"],
+          "properties": {
+            "published": { "type": "boolean" },
+            "logIndex": { "type": "integer", "minimum": 0 },
+            "logUrl": { "type": "string", "format": "uri" }
+          }
+        }
+      }
+    },
+
+    "emitter": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["name", "version"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "version": { "type": "string", "minLength": 1 }
+      }
+    },
+
+    "merge": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "kind": { "enum": ["squash", "rebase", "merge", "pull-request"] },
+        "pullRequest": { "type": "string", "format": "uri" },
+        "mergeCommit": { "$ref": "#/$defs/gitOid" },
+        "targetRef": { "type": "string" }
+      }
+    },
+
+    "binding": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["changeDigest", "algorithm"],
+      "properties": {
+        "changeDigest": { "$ref": "#/$defs/hex64" },
+        "algorithm": { "const": "provene-changeset-v1" },
+        "parent": { "$ref": "#/$defs/gitOid" },
+        "excluded": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "constituents": {
+      "type": "array",
+      "description": "The per-commit receipts this aggregate carries forward, by digest. May be empty: a change with no receipts is a fact worth signing, not a reason to stay silent.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["receiptDigest", "changeDigest", "tier"],
+        "properties": {
+          "receiptDigest": { "$ref": "#/$defs/sha256Ref" },
+          "changeDigest": { "$ref": "#/$defs/hex64" },
+          "tier": { "enum": ["T0", "T1", "T2", "T3"] },
+          "commit": { "$ref": "#/$defs/gitOid" }
+        }
+      }
+    },
+
+    "coverage": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["complete", "constituentsFound", "commitsInRange"],
+      "description": "Emitted even when incomplete. A missing aggregate is indistinguishable from a crashed job or an uninstalled product; complete:false is a signed statement of exactly how much was covered.",
+      "properties": {
+        "complete": { "type": "boolean" },
+        "constituentsFound": { "type": "integer", "minimum": 0 },
+        "commitsInRange": { "type": "integer", "minimum": 0 },
+        "exemptedCommits": { "type": "integer", "minimum": 0 }
+      }
+    },
+
+    "verification": {
+      "type": "object",
+      "additionalProperties": true,
+      "properties": {
+        "runs": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": true,
+            "required": ["id", "kind", "result", "observedBy"],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "kind": { "enum": ["test", "lint", "typecheck", "build", "check"] },
+              "tool": { "type": "string" },
+              "result": { "enum": ["PASSED", "WARNED", "FAILED"] },
+              "counts": {
+                "type": "object",
+                "properties": {
+                  "passed": { "type": "integer", "minimum": 0 },
+                  "failed": { "type": "integer", "minimum": 0 },
+                  "skipped": { "type": "integer", "minimum": 0 }
+                }
+              },
+              "url": { "type": "string", "format": "uri" },
+              "baseCommit": { "$ref": "#/$defs/gitOid" },
+              "observedBy": {
+                "const": "ci",
+                "description": "An aggregate is signed by CI, so every run it carries was observed by CI. A locally observed run cannot be promoted by restating it."
+              }
+            }
+          }
+        },
+        "unverifiedPaths": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+
+    "humanReview": {
+      "type": "object",
+      "required": ["observed"],
+      "properties": { "observed": { "type": "boolean" } }
+    }
+  },
+
+  "$defs": {
+    "hex64": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+    "gitOid": { "type": "string", "pattern": "^([0-9a-f]{40}|[0-9a-f]{64})$" },
+    "sha256Ref": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" }
+  }
+}

@@ -37,3 +37,5 @@ Standard library only, no install. `runner/run.py` implements the normative sema
 ## Provenance of a correction
 
 `policy-eval/004` originally expected a single finding. Running the suite produced two, which was correct behaviour the RFC had not specified. RFC 0002 §5.4 now requires every failing predicate to be reported, because an evaluator that stops at the first failure sends a developer through one CI round trip per problem. The suite found an underspecification in the prose, which is what it is for.
+
+Every `changedigest` fixture pins `canonicalPayload` as well as the digest. Those bytes are the **changeset manifest** of RFC 0001 §4.1.1: an implementation that writes the manifest to a file must produce exactly them, with no trailing newline, so the fixtures already constrain it.

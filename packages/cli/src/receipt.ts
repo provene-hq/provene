@@ -15,6 +15,14 @@ export interface Statement {
   readonly predicate: Record<string, unknown>;
 }
 
+export interface VerificationRun {
+  readonly id: string;
+  readonly kind: "test";
+  readonly tool: string;
+  readonly result: "PASSED" | "FAILED";
+  readonly observedBy: "local";
+}
+
 export interface BuildInput {
   readonly subjectName: string;
   readonly entries: readonly ChangeEntry[];
@@ -25,6 +33,7 @@ export interface BuildInput {
   readonly session?: { id: string; startedAt: string; endedAt: string; toolCalls: number };
   readonly emitter: { name: string; version: string };
   readonly commands: readonly RedactedCommand[];
+  readonly runs: readonly VerificationRun[];
   readonly attributedPaths: readonly string[];
 }
 
@@ -73,7 +82,7 @@ export function buildT0(input: BuildInput): Statement {
       },
       commands: input.commands,
       verification: {
-        runs: [],
+        runs: input.runs,
         // RFC 0001 6.6: paths that no verification RUN covers. A T0 receipt has
         // no runs, so every changed path is unverified -- which is the true claim.
         unverifiedPaths: changed.map((e) => e.path),
@@ -96,9 +105,43 @@ export function statementDigest(serialized: string): string {
   return `sha256:${createHash("sha256").update(serialized, "utf8").digest("hex")}`;
 }
 
+/**
+ * What a receipt's tier is actually worth.
+ *
+ * A union rather than a `Tier` plus a boolean, because the two situations are
+ * not the same fact at different confidences: a signed T2 is verified evidence,
+ * and an unsigned document saying "T2" is an assertion by whoever wrote the
+ * file. Collapsing them into one field is what let a fork's pull request be
+ * reported as CI-attested.
+ */
+/**
+ * Does this document actually carry a signature?
+ *
+ * RFC 0001 §8 makes the FILENAME declare the encoding, which is right: a
+ * document's claim about its own trustworthiness is not evidence. But nothing
+ * checked that a file named `.dsse.json` contained an envelope, so renaming an
+ * unsigned T0 statement to `forged.dsse.json` and editing one field made
+ * `verify` report `T2`, exit 0, and suppress the self-attestation warning.
+ *
+ * The filename still decides which question is asked. This decides whether the
+ * document can answer it.
+ */
+export function isDsseEnvelope(doc: unknown): boolean {
+  const d = doc as Record<string, unknown> | null;
+  if (d === null || typeof d !== "object") return false;
+  return typeof d["payload"] === "string"
+    && typeof d["payloadType"] === "string"
+    && Array.isArray(d["signatures"])
+    && d["signatures"].length > 0;
+}
+
+export type Assurance =
+  | { readonly kind: "signed"; readonly tier: Tier }
+  | { readonly kind: "unsigned"; readonly declared: Tier | "unknown" };
+
 export interface CheckResult {
   readonly ok: boolean;
-  readonly tier: Tier | "unknown";
+  readonly assurance: Assurance;
   readonly problems: string[];
   readonly rebased: boolean;
 }
@@ -110,17 +153,37 @@ export interface CheckResult {
 export function checkStatement(
   statement: unknown,
   actual: { entries: readonly ChangeEntry[]; parent: string } | undefined,
+  /**
+   * Whether the receipt arrived inside a signed envelope. Nothing signs yet, so
+   * this is false everywhere today -- which is exactly why it must be passed
+   * rather than inferred from the document. A receipt declaring "tier": "T2"
+   * about itself is a claim, not evidence, and reporting it as T2 would present
+   * a forged trust claim as verified.
+   */
+  signed = false,
 ): CheckResult {
   const problems: string[] = [];
   let rebased = false;
   const s = statement as Partial<Statement> | null;
 
-  if (s === null || typeof s !== "object") return { ok: false, tier: "unknown", problems: ["not an object"], rebased };
+  if (s === null || typeof s !== "object") {
+    return { ok: false, assurance: { kind: "unsigned", declared: "unknown" }, problems: ["not an object"], rebased };
+  }
   if (s._type !== STATEMENT_TYPE) problems.push(`_type must be ${STATEMENT_TYPE}`);
   if (s.predicateType !== PREDICATE_TYPE) problems.push(`predicateType must be ${PREDICATE_TYPE}`);
 
   const pred = (s.predicate ?? {}) as Record<string, any>;
-  const tier: Tier | "unknown" = pred["attestation"]?.tier ?? "unknown";
+  const declaredTier: Tier | "unknown" = pred["attestation"]?.tier ?? "unknown";
+
+  // An unsigned receipt is T0 whatever it says about itself (RFC 0001 3, 7).
+  const assurance: Assurance = signed
+    ? { kind: "signed", tier: declaredTier === "unknown" ? "T0" : declaredTier }
+    : { kind: "unsigned", declared: declaredTier };
+  if (!signed && declaredTier !== "T0" && declaredTier !== "unknown") {
+    problems.push(
+      `unsigned receipt declares tier ${declaredTier}; an unsigned statement can only be T0`,
+    );
+  }
   if (pred["provene"] !== "0.1") problems.push("predicate.provene must be \"0.1\"");
   if (pred["changes"]?.granularity === "file") {
     const withSpans = (pred["changes"].files ?? []).filter((f: any) => f.attributed !== undefined);
@@ -137,8 +200,11 @@ export function checkStatement(
   // half of the receipt is unbound from the signed half: an attacker can rewrite
   // the recorded blob ids, paths or statuses and the receipt still verifies
   // against the working tree. Found by tampering with a real receipt, not by review.
+  // Checked unconditionally. Guarding on a non-empty file list let a receipt
+  // with `"files": []` and any subject digest skip verification entirely --
+  // absence treated as "nothing to check" rather than as a claim of its own.
   const declaredFiles = (pred["changes"]?.files ?? []) as Array<Record<string, string>>;
-  if (claimed !== undefined && declaredFiles.length > 0) {
+  if (claimed !== undefined) {
     const declared: ChangeEntry[] = declaredFiles.map((f) => ({
       status: f["status"] as ChangeEntry["status"],
       path: f["path"] ?? "",
@@ -160,5 +226,5 @@ export function checkStatement(
       rebased = true;
     }
   }
-  return { ok: problems.length === 0, tier, problems, rebased };
+  return { ok: problems.length === 0, assurance, problems, rebased };
 }
