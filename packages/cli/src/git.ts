@@ -39,16 +39,51 @@ export function rootCommit(cwd?: string): string {
  */
 const isNullOid = (oid: string): boolean => /^0+$/.test(oid);
 
-/** The blob id the working-tree content WOULD have. Does not write to the object store. */
-function hashObject(path: string, cwd?: string): string {
-  try {
-    return execFileSync("git", ["hash-object", "--", path], {
-      encoding: "utf8",
-      cwd: cwd ?? process.cwd(),
-    }).trim();
-  } catch {
-    return "-"; // the file is gone; the status letter already says what happened
+/**
+ * The blob ids the working-tree contents WOULD have. Writes nothing to the
+ * object store.
+ *
+ * Batched through --stdin-paths rather than one process per file: a session
+ * that touches two hundred files was spawning two hundred git processes, and
+ * process creation dominates on Windows in particular. --stdin-paths cannot
+ * express a path containing a newline, so those few fall back to one call each
+ * rather than being silently misattributed.
+ */
+function hashObjects(paths: readonly string[], cwd?: string): Map<string, string> {
+  const out = new Map<string, string>();
+  if (paths.length === 0) return out;
+
+  const awkward = paths.filter((p) => p.includes("\n"));
+  const batchable = paths.filter((p) => !p.includes("\n"));
+
+  if (batchable.length > 0) {
+    try {
+      const stdout = execFileSync("git", ["hash-object", "--stdin-paths"], {
+        encoding: "utf8",
+        cwd: cwd ?? process.cwd(),
+        input: batchable.join("\n") + "\n",
+        maxBuffer: 64 * 1024 * 1024,
+      });
+      const oids = stdout.split("\n").filter((l) => l !== "");
+      // A short reply means git skipped something; pairing by position would
+      // then attach the wrong content to the wrong path, which is worse than
+      // recording nothing at all.
+      if (oids.length === batchable.length) {
+        batchable.forEach((p, i) => out.set(p, oids[i]!));
+      }
+    } catch { /* fall through to per-file below */ }
   }
+
+  for (const p of [...awkward, ...batchable.filter((p) => !out.has(p))]) {
+    try {
+      out.set(p, execFileSync("git", ["hash-object", "--", p], {
+        encoding: "utf8", cwd: cwd ?? process.cwd(),
+      }).trim());
+    } catch {
+      out.set(p, "-"); // the file is gone; the status letter already says so
+    }
+  }
+  return out;
 }
 
 function untrackedEntries(cwd?: string): ChangeEntry[] {
@@ -57,15 +92,14 @@ function untrackedEntries(cwd?: string): ChangeEntry[] {
     cwd: cwd ?? process.cwd(),
     maxBuffer: 64 * 1024 * 1024,
   });
-  return listed
-    .split("\0")
-    .filter((f) => f !== "")
-    .map((path) => ({
-      status: "A" as const,
-      path,
-      preBlob: "-",
-      postBlob: hashObject(path, cwd),
-    }));
+  const paths = listed.split("\0").filter((f) => f !== "");
+  const oids = hashObjects(paths, cwd);
+  return paths.map((path) => ({
+    status: "A" as const,
+    path,
+    preBlob: "-",
+    postBlob: oids.get(path) ?? "-",
+  }));
 }
 
 /**
@@ -80,7 +114,8 @@ export function diffEntries(base: string, cwd?: string): ChangeEntry[] {
     maxBuffer: 64 * 1024 * 1024,
   });
   const fields = raw.split("\0");
-  const out: ChangeEntry[] = [];
+  const pending: Array<ChangeEntry & { postBlob: string }> = [];
+  const needHashing: string[] = [];
 
   let i = 0;
   while (i < fields.length) {
@@ -99,7 +134,8 @@ export function diffEntries(base: string, cwd?: string): ChangeEntry[] {
     i += isRenameOrCopy ? 3 : 2;
 
     const path = second ?? first;
-    out.push({
+    if (isNullOid(postBlob) && letter !== "D") needHashing.push(path);
+    pending.push({
       status: letter === "R" ? "R" : letter,
       path,
       ...(letter === "R" ? { prePath: first } : {}),
@@ -109,10 +145,13 @@ export function diffEntries(base: string, cwd?: string): ChangeEntry[] {
       // content to bind to -- without this, two entirely different unstaged
       // edits to the same path produce the SAME change digest, which is the
       // normal case at session end and makes the binding decorative.
-      postBlob: isNullOid(postBlob)
-        ? (letter === "D" ? "-" : hashObject(path, cwd))
-        : postBlob,
+      postBlob: isNullOid(postBlob) ? "" : postBlob, // filled in below
     });
   }
+  const hashed = hashObjects(needHashing, cwd);
+  const out: ChangeEntry[] = pending.map((e) => ({
+    ...e,
+    postBlob: e.postBlob !== "" ? e.postBlob : (e.status === "D" ? "-" : hashed.get(e.path) ?? "-"),
+  }));
   return [...out, ...untrackedEntries(cwd)];
 }
