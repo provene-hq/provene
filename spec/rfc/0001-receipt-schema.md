@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.1.10 |
+| **Version** | 0.1.11 |
 | **Predicate type** | `https://provene.dev/attestation/code-change/v0.1` |
 | **Date** | 2026-08-31 |
 | **Supersedes** | — |
@@ -311,6 +311,10 @@ Raw standard output or standard error MUST NOT be recorded, at any tier. Counts,
 
 `unverifiedPaths` lists changed paths that no run in this receipt covers.
 
+**It carries no attribution claim, and MUST NOT be filtered by one.** It is verification coverage over the whole changeset, so it includes paths the developer wrote themselves, and that is correct: a changed file that no test executed is a risk to a reviewer regardless of who typed it. A consumer displaying it beside an attribution count MUST NOT imply the two describe the same set.
+
+Restricting it to paths carrying `attributedTo` was proposed in review and is rejected. This field was named `unattributedPaths` through v0.1.1, and was renamed precisely because the old name invited implementations to compute it from attribution rather than from verification runs — and one did. Narrowing it now would reintroduce that conflation with the new name attached, and would hide from a reviewer exactly the untested human-written changes that arrive in the same pull request as an agent's work.
+
 **On the name.** This field was `unattributedPaths` through v0.1.1. It is about *verification* coverage, not attribution, and the two are separate concerns here — a path can be agent-attributed and well tested, or unattributed and untested. Writing the emitter made the collision plain: the implementation computed the field from the attribution journal, matching the old name rather than the specified meaning, and passed every schema check while doing so. Renamed in v0.1.2. This field is the reviewer-facing product: it is what the PR annotation is generated from.
 
 ### 6.7 Human review
@@ -420,6 +424,8 @@ Marked for external review; none block a reference implementation.
 3. **Policy grammar.** Not specified here. It is the paid surface and belongs in RFC 0002, which must also specify the three gate modes (`conditional`, `required-with-exemptions`, `enrolled`) that determine whether a deployment resists concealment at all.
 
 ## Changelog
+
+- **0.1.11** (2026-08-31) — §6.6 states explicitly that `unverifiedPaths` carries no attribution claim and must not be filtered by one. Raised in review as having the same projection problem `changes.files` had. The observation is fair — a consumer can misread the two side by side — but the proposed narrowing would reintroduce the exact conflation the v0.1.2 rename removed, and would hide untested human-written changes from the reviewer who most needs to see them. Documented rather than changed.
 
 - **0.1.10** (2026-08-31) — §6.4.1 adds `attributedTo`. Through 0.1.9 the specification claimed `file` granularity asserted the agent touched a file while also requiring `changes.files` to be the whole changeset; both cannot hold, so every receipt asserted the agent had touched files it never saw. The reference implementation had been computing attribution from its journal and discarding it, and reporting a count that was equal to the number of changed paths by construction. Additive and optional: 0.1.9 receipts remain valid and are read as making no attribution claim, which is what they were.
 

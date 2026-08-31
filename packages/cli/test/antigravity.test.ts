@@ -253,3 +253,41 @@ test("a command does not get to state its own exit status by printing one", () =
   };
   assert.equal(outcomeOf(onlyInOutput as never), undefined);
 });
+
+/**
+ * The three ways an argument value can be read, pinned.
+ *
+ * Raised in review as a risk that valid commands are dropped or altered. The
+ * behaviour is deliberate and each branch fails in the safe direction, but it
+ * is a tradeoff rather than an obvious right answer, so it is pinned here where
+ * changing it has to be a decision.
+ *
+ * The two failure cases the review describes both require Antigravity to STOP
+ * double-encoding, which is a format change — and on a format change, dropping
+ * evidence is the outcome this reader is built to have.
+ */
+test("decodeArg: decoded, dropped, or taken raw — and never invented", () => {
+  // What every real transcript contains: a JSON string inside a JSON string.
+  assert.equal(decodeArg(JSON.stringify("npm test")), "npm test");
+  assert.equal(decodeArg(JSON.stringify("e:\\provene\\a.ts")), "e:\\provene\\a.ts");
+
+  // Valid JSON that is not a string. A shape we do not recognise, so nothing is
+  // returned: the command is recorded as absent rather than as a guess.
+  assert.equal(decodeArg('{"foo":"bar"}'), undefined);
+  assert.equal(decodeArg("[1,2]"), undefined);
+  assert.equal(decodeArg("123"), undefined);
+  assert.equal(decodeArg("null"), undefined);
+
+  // Not JSON at all — which is what a single-encoded path or command looks
+  // like. Taken as written, because a build that stopped double-encoding must
+  // not silently record nothing.
+  assert.equal(decodeArg("e:\\provene\\a.ts"), "e:\\provene\\a.ts");
+  assert.equal(decodeArg("npm test"), "npm test");
+  assert.equal(decodeArg("echo {not: json}"), "echo {not: json}");
+
+  // Nothing here ever produces a value that was not present in the input.
+  for (const raw of ['"npm test"', "{}", "0", "", "npm test"]) {
+    const v = decodeArg(raw);
+    if (v !== undefined) assert.ok(raw.includes(v) || v === JSON.parse(raw), raw);
+  }
+});
