@@ -9,9 +9,14 @@ branding:
 
 inputs:
   version:
-    description: Version of the provene CLI to use.
+    description: >-
+      Version of the provene CLI to install. Pinned by default: `latest` would
+      mean every consumer's CI executes whatever was published most recently,
+      so one compromised npm publish reaches every pipeline using this action --
+      in a supply-chain provenance tool. Override deliberately if you want to
+      track releases.
     required: false
-    default: latest
+    default: "0.0.8"
   base:
     description: >-
       Commit to diff against. Defaults to the pull request's base, which is what
@@ -38,6 +43,19 @@ runs:
     - name: Install provene
       shell: bash
       run: npm install -g proveneio@${{ inputs.version }}
+
+    - name: Ensure the base commit is present
+      shell: bash
+      env:
+        PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
+      run: |
+        # actions/checkout defaults to fetch-depth 1, so the pull request base
+        # is usually absent and `git rev-parse` on it fails. Fetch just that
+        # commit rather than requiring every consumer to set fetch-depth: 0.
+        if [ -n "${PROVENE_BASE:-}" ] && ! git rev-parse --verify --quiet "$PROVENE_BASE^{commit}" >/dev/null; then
+          echo "base $PROVENE_BASE not present in this clone; fetching it"
+          git fetch --no-tags --depth=1 origin "$PROVENE_BASE" ||             echo "provene: could not fetch the base commit; check will report what it can"
+        fi
 
     - name: Check receipts and evidence
       shell: bash

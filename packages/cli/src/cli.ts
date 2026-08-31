@@ -141,6 +141,7 @@ function cmdCheck(args: Record<string, string | boolean>): number {
     root, base,
     ...(args["head"] !== undefined ? { head: git(["rev-parse", String(args["head"])], root) } : {}),
     ...(args["coverage"] !== undefined ? { lcovPath: String(args["coverage"]) } : {}),
+    ...(args["exclude"] !== undefined ? { exclude: String(args["exclude"]).split(",") } : {}),
   });
 
   if (args["format"] === "json") {

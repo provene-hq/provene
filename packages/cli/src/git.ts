@@ -108,7 +108,9 @@ function untrackedEntries(cwd?: string): ChangeEntry[] {
  * with renames and copies carrying a second NUL-separated path.
  */
 export function diffEntries(base: string, cwd?: string): ChangeEntry[] {
-  const raw = execFileSync("git", ["diff", "--raw", "-M", "-z", base], {
+  // -z already defeats path quoting for --raw, but core.quotePath is pinned so
+  // behaviour does not depend on the user's configuration.
+  const raw = execFileSync("git", ["-c", "core.quotePath=false", "diff", "--raw", "-M", "-z", base], {
     encoding: "utf8",
     cwd: cwd ?? process.cwd(),
     maxBuffer: 64 * 1024 * 1024,

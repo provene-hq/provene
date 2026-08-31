@@ -8,9 +8,11 @@
  * the ones nobody checked.
  */
 import { readFileSync, existsSync, readdirSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { join } from "node:path";
 import { changedLines, parseLcov, evidenceFor, type FileEvidence } from "./coverage.ts";
 import { checkStatement, type Statement, type Tier } from "./receipt.ts";
+import { matches } from "./glob.ts";
 import { diffEntries } from "./git.ts";
 
 export interface ReceiptSummary {
@@ -25,16 +27,30 @@ export interface CheckResult {
   readonly evidence: readonly FileEvidence[];
   readonly changedPaths: readonly string[];
   readonly attributedPaths: readonly string[];
-  readonly unattributedPaths: readonly string[];
+  readonly nonAgentPaths: readonly string[];
   readonly hasCoverage: boolean;
   /** File extensions the coverage report instruments, from the report itself. */
   readonly instrumentedExtensions: readonly string[];
+  /** Caller-supplied globs excluded from untested-source warnings. */
+  readonly excludeGlobs?: readonly string[];
 }
 
 const extension = (p: string): string => {
   const i = p.lastIndexOf(".");
   return i === -1 ? "" : p.slice(i);
 };
+
+/** Receipt files added or modified between two commits. */
+export function receiptsInRange(root: string, base: string, head: string): Set<string> {
+  try {
+    const raw = execFileSync("git", ["diff", "--name-only", "-z", base, head, "--", ".provene/"], {
+      encoding: "utf8", cwd: root, maxBuffer: 16 * 1024 * 1024,
+    });
+    return new Set(raw.split("\0").filter((f) => f !== "").map((f) => f.replace(/^\.provene\//, "")));
+  } catch {
+    return new Set();
+  }
+}
 
 export function loadReceipts(root: string): Array<{ file: string; statement: Statement }> {
   const dir = join(root, ".provene");
@@ -58,18 +74,30 @@ export function runCheck(opts: {
   base: string;
   head?: string;
   lcovPath?: string;
+  exclude?: readonly string[];
 }): CheckResult {
   const receipts = loadReceipts(opts.root).map(({ file, statement }) => {
-    const r = checkStatement(statement, undefined);
+    // The filename declares the encoding (RFC 0001 8): only a .dsse.json is a
+    // signed envelope. Nothing signs yet, so this is false everywhere -- and
+    // must be passed rather than read from the document being checked.
+    const r = checkStatement(statement, undefined, file.endsWith(".dsse.json"));
     return { file, tier: r.tier, ok: r.ok, problems: r.problems };
   });
 
   const changed = changedLines(opts.base, opts.head ?? "HEAD", opts.root);
   const changedPaths = [...changed.keys()].filter((p) => !p.startsWith(".provene/")).sort();
 
-  // Which changed paths does any receipt claim the agent touched?
+  // Only receipts THIS change introduced may attribute anything in it.
+  //
+  // Every receipt ever committed lives in .provene/, so taking attribution from
+  // all of them meant a file an agent touched months ago was reported as
+  // agent-authored in a pull request that a human wrote by hand. Observed on
+  // this repository's own first pull request, which added no receipt at all and
+  // was still reported as carrying agent attribution.
+  const inRange = receiptsInRange(opts.root, opts.base, opts.head ?? "HEAD");
   const attributed = new Set<string>();
-  for (const { statement } of loadReceipts(opts.root)) {
+  for (const { file, statement } of loadReceipts(opts.root)) {
+    if (!inRange.has(file)) continue;
     const files = ((statement.predicate as Record<string, any>)["changes"]?.files ?? []) as Array<{ path: string }>;
     for (const f of files) attributed.add(f.path);
   }
@@ -81,10 +109,11 @@ export function runCheck(opts: {
   return {
     receipts,
     instrumentedExtensions: [...new Set([...coverage.keys()].map(extension))],
+    ...(opts.exclude !== undefined ? { excludeGlobs: opts.exclude } : {}),
     evidence: hasCoverage ? evidenceFor(filtered, coverage) : [],
     changedPaths,
     attributedPaths: changedPaths.filter((p) => attributed.has(p)),
-    unattributedPaths: changedPaths.filter((p) => !attributed.has(p)),
+    nonAgentPaths: changedPaths.filter((p) => !attributed.has(p)),
     hasCoverage,
   };
 }
@@ -103,13 +132,23 @@ export function runCheck(opts: {
  * run never instruments -- a package.json, a YAML config -- is not evidence of
  * anything and must not be annotated, or the warnings become noise.
  */
+/**
+ * Declaration files contain no executable statements, so they never appear in a
+ * coverage report and would otherwise be flagged as untested forever. Warning on
+ * a file no test could ever execute is how thirty real warnings get ignored.
+ */
+const TYPE_ONLY = /(^|\/)[^/]*\.d\.ts$|(^|\/)types?\.ts$/;
+
 export function untestedSourceFiles(result: CheckResult): FileEvidence[] {
   // Derived from the coverage REPORT, not from the changed files. Deriving it
   // from the changed set is empty precisely when it matters most: when every
   // changed file is one nothing tests.
   const instrumented = new Set(result.instrumentedExtensions);
   return result.evidence.filter(
-    (e) => !e.instrumented && instrumented.has(extension(e.path)),
+    (e) => !e.instrumented
+      && instrumented.has(extension(e.path))
+      && !TYPE_ONLY.test(e.path)
+      && !(result.excludeGlobs ?? []).some((g) => matches(g, e.path)),
   );
 }
 

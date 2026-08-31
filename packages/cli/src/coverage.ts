@@ -19,7 +19,14 @@ import { execFileSync } from "node:child_process";
  * package-lock.json and `check` counted it as a changed path.
  */
 export function changedLines(base: string, head = "HEAD", cwd?: string): Map<string, Set<number>> {
-  const raw = execFileSync("git", ["diff", "-U0", "--no-color", "--no-ext-diff", base, head], {
+  // -c core.quotePath=false: git otherwise C-quotes paths containing spaces or
+  // non-ASCII, and the quoted form never matches an lcov path.
+  // --src-prefix/--dst-prefix: a user with diff.noprefix set produces headers
+  // with no `b/`, and the strip below would then eat a real top-level `b/`.
+  const raw = execFileSync("git", [
+    "-c", "core.quotePath=false", "diff", "-U0", "--no-color", "--no-ext-diff",
+    "--src-prefix=a/", "--dst-prefix=b/", base, head,
+  ], {
     encoding: "utf8", cwd: cwd ?? process.cwd(), maxBuffer: 64 * 1024 * 1024,
   });
   const out = new Map<string, Set<number>>();

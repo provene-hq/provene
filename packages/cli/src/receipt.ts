@@ -110,6 +110,14 @@ export interface CheckResult {
 export function checkStatement(
   statement: unknown,
   actual: { entries: readonly ChangeEntry[]; parent: string } | undefined,
+  /**
+   * Whether the receipt arrived inside a signed envelope. Nothing signs yet, so
+   * this is false everywhere today -- which is exactly why it must be passed
+   * rather than inferred from the document. A receipt declaring "tier": "T2"
+   * about itself is a claim, not evidence, and reporting it as T2 would present
+   * a forged trust claim as verified.
+   */
+  signed = false,
 ): CheckResult {
   const problems: string[] = [];
   let rebased = false;
@@ -120,7 +128,16 @@ export function checkStatement(
   if (s.predicateType !== PREDICATE_TYPE) problems.push(`predicateType must be ${PREDICATE_TYPE}`);
 
   const pred = (s.predicate ?? {}) as Record<string, any>;
-  const tier: Tier | "unknown" = pred["attestation"]?.tier ?? "unknown";
+  const declaredTier: Tier | "unknown" = pred["attestation"]?.tier ?? "unknown";
+
+  // An unsigned receipt is T0 whatever it says about itself (RFC 0001 3, 7).
+  let tier: Tier | "unknown" = declaredTier;
+  if (!signed && declaredTier !== "T0" && declaredTier !== "unknown") {
+    problems.push(
+      `unsigned receipt declares tier ${declaredTier}; an unsigned statement can only be T0`,
+    );
+    tier = "T0";
+  }
   if (pred["provene"] !== "0.1") problems.push("predicate.provene must be \"0.1\"");
   if (pred["changes"]?.granularity === "file") {
     const withSpans = (pred["changes"].files ?? []).filter((f: any) => f.attributed !== undefined);
@@ -137,8 +154,11 @@ export function checkStatement(
   // half of the receipt is unbound from the signed half: an attacker can rewrite
   // the recorded blob ids, paths or statuses and the receipt still verifies
   // against the working tree. Found by tampering with a real receipt, not by review.
+  // Checked unconditionally. Guarding on a non-empty file list let a receipt
+  // with `"files": []` and any subject digest skip verification entirely --
+  // absence treated as "nothing to check" rather than as a claim of its own.
   const declaredFiles = (pred["changes"]?.files ?? []) as Array<Record<string, string>>;
-  if (claimed !== undefined && declaredFiles.length > 0) {
+  if (claimed !== undefined) {
     const declared: ChangeEntry[] = declaredFiles.map((f) => ({
       status: f["status"] as ChangeEntry["status"],
       path: f["path"] ?? "",
