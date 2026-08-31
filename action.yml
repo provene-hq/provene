@@ -118,21 +118,29 @@ runs:
         MAJOR=$(node -p "process.versions.node.split('.')[0]")
         MINOR=$(node -p "process.versions.node.split('.')[1]")
         if [ -f "$SRC" ] && { [ "$MAJOR" -ge 23 ] || { [ "$MAJOR" -eq 22 ] && [ "$MINOR" -ge 6 ]; }; }; then
-          echo "cmd=node $SRC" >> "$GITHUB_OUTPUT"
+          # Two outputs, not one interpolated command string. A single `cmd`
+          # had to be word-split at the point of use to become an argv, so a
+          # runner whose path contains a space -- routine on self-hosted and
+          # Windows runners, e.g. C:\actions runner\_work -- split the script
+          # path in half and node looked for a module called "C:\actions".
+          echo "runner=node" >> "$GITHUB_OUTPUT"
+          echo "script=$SRC" >> "$GITHUB_OUTPUT"
           echo "provene: running the CLI bundled with this action (node $(node -v))"
         else
           # Node too old to strip types. Fall back to a PINNED npm version --
           # never @latest, which would execute whatever was published most
           # recently.
           npm install -g "proveneio@${PROVENE_VERSION}"
-          echo "cmd=provene" >> "$GITHUB_OUTPUT"
+          echo "runner=provene" >> "$GITHUB_OUTPUT"
+          echo "script=" >> "$GITHUB_OUTPUT"
           echo "provene: node $(node -v) cannot run TypeScript sources; installed proveneio@${PROVENE_VERSION}"
         fi
 
     - name: Check receipts and evidence
       shell: bash
       env:
-        PROVENE_CMD: ${{ steps.cli.outputs.cmd }}
+        PROVENE_RUNNER: ${{ steps.cli.outputs.runner }}
+        PROVENE_SCRIPT: ${{ steps.cli.outputs.script }}
         PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
         PROVENE_COVERAGE: ${{ inputs.coverage }}
         PROVENE_EXCLUDE: ${{ inputs.exclude }}
@@ -144,7 +152,11 @@ runs:
         [ -n "${PROVENE_COVERAGE:-}" ] && args+=(--coverage "$PROVENE_COVERAGE")
         [ -n "${PROVENE_EXCLUDE:-}" ] && args+=(--exclude "$PROVENE_EXCLUDE")
 
-        $PROVENE_CMD "${args[@]}" | tee "$RUNNER_TEMP/provene.txt"
+        # Built as an array so every element stays one argument regardless of
+        # the characters in it.
+        cli=("$PROVENE_RUNNER")
+        [ -n "${PROVENE_SCRIPT:-}" ] && cli+=("$PROVENE_SCRIPT")
+        "${cli[@]}" "${args[@]}" | tee "$RUNNER_TEMP/provene.txt"
         status=${PIPESTATUS[0]}
 
         {
@@ -166,7 +178,8 @@ runs:
       if: inputs.sign == 'true'
       shell: bash
       env:
-        PROVENE_CMD: ${{ steps.cli.outputs.cmd }}
+        PROVENE_RUNNER: ${{ steps.cli.outputs.runner }}
+        PROVENE_SCRIPT: ${{ steps.cli.outputs.script }}
         PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
         PROVENE_COVERAGE: ${{ inputs.coverage }}
         PROVENE_PUBLIC: ${{ !github.event.repository.private }}
@@ -201,7 +214,9 @@ runs:
         # (RFC 0001 section 11).
         [ "${PROVENE_PUBLIC:-false}" = "true" ] && args+=(--public)
 
-        $PROVENE_CMD "${args[@]}"
+        cli=("$PROVENE_RUNNER")
+        [ -n "${PROVENE_SCRIPT:-}" ] && cli+=("$PROVENE_SCRIPT")
+        "${cli[@]}" "${args[@]}"
 
     # GitHub holds the OIDC identity and selects the Sigstore instance by
     # repository visibility: the public-good instance for public repositories,

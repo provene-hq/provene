@@ -71,7 +71,10 @@ export interface GhResult {
   readonly message: string;
   /** Best effort, for reporting only. Empty is not a failure. */
   readonly statements: readonly Statement[];
+  /** For display. NOT for matching — see parseGhOutput. */
   readonly identities: readonly string[];
+  /** Certificate fields naming the signing workflow. The matchable list. */
+  readonly signers: readonly string[];
 }
 
 export interface GhVerifyOptions {
@@ -102,12 +105,28 @@ export interface GhVerifyOptions {
  * Every field read here is optional on purpose. A shape change must cost us
  * detail, never soundness.
  */
-export function parseGhOutput(stdout: string): { statements: Statement[]; identities: string[] } {
+export function parseGhOutput(stdout: string): {
+  statements: Statement[];
+  /** Everything worth showing a human, including the repository URI. */
+  identities: string[];
+  /**
+   * Only fields that name the SIGNING WORKFLOW.
+   *
+   * Kept apart from `identities` because the two were one list, and
+   * `sourceRepositoryURI` — `https://github.com/owner/repo` — was in it. An
+   * aggregate declaring `attester.identity: "owner/repo"` therefore matched,
+   * so any workflow in the repository could attest under the repository's own
+   * name and pass the check that exists to pin it to one workflow. A list
+   * assembled for display was reused as a security boundary.
+   */
+  signers: string[];
+} {
   const statements: Statement[] = [];
   const identities: string[] = [];
+  const signers: string[] = [];
   let parsed: unknown;
-  try { parsed = JSON.parse(stdout); } catch { return { statements, identities }; }
-  if (!Array.isArray(parsed)) return { statements, identities };
+  try { parsed = JSON.parse(stdout); } catch { return { statements, identities, signers }; }
+  if (!Array.isArray(parsed)) return { statements, identities, signers };
   for (const entry of parsed) {
     const result = (entry as any)?.verificationResult;
     const statement = result?.statement;
@@ -117,10 +136,12 @@ export function parseGhOutput(stdout: string): { statements: Statement[]; identi
     const cert = result?.signature?.certificate;
     for (const field of ["subjectAlternativeName", "buildSignerURI", "sourceRepositoryURI"]) {
       const v = cert?.[field];
-      if (typeof v === "string" && v !== "" && !identities.includes(v)) identities.push(v);
+      if (typeof v !== "string" || v === "") continue;
+      if (!identities.includes(v)) identities.push(v);
+      if (field !== "sourceRepositoryURI" && !signers.includes(v)) signers.push(v);
     }
   }
-  return { statements, identities };
+  return { statements, identities, signers };
 }
 
 /**
@@ -161,7 +182,7 @@ export function ghVerify(opts: GhVerifyOptions): GhResult {
     // the verifier was missing.
     if (e.code === "ENOENT") {
       return {
-        verified: false, ran: false, noAttestation: false, statements: [], identities: [],
+        verified: false, ran: false, noAttestation: false, statements: [], identities: [], signers: [],
         message: "the GitHub CLI (gh) is not installed, so the signature could not be checked. " +
                  "Provene does not implement signature verification itself; install gh " +
                  "(https://cli.github.com) and run `gh auth login`.",
@@ -169,13 +190,13 @@ export function ghVerify(opts: GhVerifyOptions): GhResult {
     }
     const stderr = e.stderr === undefined ? "" : String(e.stderr).trim();
     return {
-      verified: false, ran: true, statements: [], identities: [],
+      verified: false, ran: true, statements: [], identities: [], signers: [],
       noAttestation: meansNoAttestation(stderr),
       message: stderr === "" ? `gh attestation verify exited ${e.status ?? "non-zero"}` : stderr,
     };
   }
-  const { statements, identities } = parseGhOutput(stdout);
-  return { verified: true, ran: true, noAttestation: false, statements, identities, message: "" };
+  const { statements, identities, signers } = parseGhOutput(stdout);
+  return { verified: true, ran: true, noAttestation: false, statements, identities, signers, message: "" };
 }
 
 export interface AggregateCheck {
@@ -277,16 +298,29 @@ export function checkAggregate(
   // workflow's name inside a repository the attacker can already run jobs in.
   const declaredAttester = pred["attestation"]?.attester?.identity;
   const ids = actual.signerIdentities ?? [];
-  if (typeof declaredAttester === "string" && declaredAttester !== "" && ids.length > 0) {
-    const bare = (v: string): string => v.replace(/^https?:\/\/[^/]+\//, "");
-    if (!ids.some((id) => bare(id) === bare(declaredAttester))) {
+  if (typeof declaredAttester === "string" && declaredAttester !== "") {
+    // On GitHub the attester of a T2 aggregate is a workflow, and only a
+    // workflow. A bare `owner/repo` names the repository, which every workflow
+    // in it shares -- so accepting that shape hands the identity check back to
+    // exactly the untrusted job it exists to exclude.
+    if (pred["attestation"]?.trustRoot?.kind === "sigstore-github"
+        && !declaredAttester.includes("/.github/workflows/")) {
       problems.push(
-        `the predicate names ${declaredAttester} as attester, but the certificate ` +
-        `identifies ${ids.join(", ")}`,
+        `attester ${declaredAttester} does not name a workflow; a repository name is ` +
+        "shared by every workflow in it and identifies no signer",
       );
     }
-  } else if (typeof declaredAttester === "string" && declaredAttester !== "") {
-    notes.push(`attester ${declaredAttester} could not be checked against the certificate`);
+    const bare = (v: string): string => v.replace(/^https?:\/\/[^/]+\//, "");
+    if (ids.length > 0) {
+      if (!ids.some((id) => bare(id) === bare(declaredAttester))) {
+        problems.push(
+          `the predicate names ${declaredAttester} as attester, but the certificate ` +
+          `identifies ${ids.join(", ")}`,
+        );
+      }
+    } else {
+      notes.push(`attester ${declaredAttester} could not be checked against the certificate`);
+    }
   }
 
   const coverage = pred["coverage"] ?? {};
