@@ -35,9 +35,11 @@ Provene does not implement signature verification and will not. `gh attestation 
 provene verify-aggregate --repo owner/name --base <base-commit>
 ```
 
-This recomputes the change set from your checkout, hands it to `gh`, and then checks the half `gh` cannot: that the signature covers the work in front of you. It reports three outcomes — verified, failed, and *could not check* — and never renders the third as either of the others.
+This recomputes the change set from your checkout, hands it to `gh`, and then checks the half `gh` cannot: that the signature covers the work in front of you. It reports three outcomes — verified, failed, and *could not check*. The third covers a missing verifier and, equally, a verifier whose answer this version cannot read back: `gh` accepting a signature it could not describe to us is not a pass, and with `--bundle` it never compared the subject digest at all.
 
 Stock tooling works too, because `provene manifest` writes the exact bytes the change digest is taken over, so `sha256(manifest)` *is* the subject digest (RFC 0001 §4.1.1):
+
+**Regenerate the manifest; never verify one you were sent.** Verifying a supplied manifest proves that *that file* was attested, not that your repository matches it. `provene verify-aggregate` always regenerates, which is why it is the safer of the two paths.
 
 ```sh
 provene manifest --base <base-commit> --out changeset

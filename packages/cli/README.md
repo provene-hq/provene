@@ -38,7 +38,7 @@ Provene does not implement signature verification, and will not: certificate cha
 provene verify-aggregate --repo owner/name --base <base-commit>
 ```
 
-That recomputes the change set from your checkout, hands the result to `gh`, and then checks the half `gh` cannot: that the change set the signature covers is the work in front of you, and that the predicate's own claims are consistent. It reports three outcomes, not two — verified, failed, and *could not check* (no verifier installed). The third is never rendered as either of the others.
+That recomputes the change set from your checkout, hands the result to `gh`, and then checks the half `gh` cannot: that the change set the signature covers is the work in front of you, and that the predicate's own claims are consistent. It reports three outcomes, not two — verified, failed, and *could not check*. The third covers a missing verifier and, equally, a verifier whose answer this version cannot read back: `gh` accepting a signature it could not describe to us is not a pass, and with `--bundle` it never compared the subject digest at all. Pass `--signer-workflow` to require a specific signer; without it, any workflow in the repository is accepted, and the command says so.
 
 With stock tooling only, no Provene verifier involved:
 
@@ -49,6 +49,8 @@ gh attestation verify changeset --repo owner/name \
 ```
 
 `provene manifest` writes the exact bytes the change digest is taken over, so `sha256(changeset)` *is* the subject digest (RFC 0001 §4.1.1). That is what makes a Provene attestation addressable by tools that know nothing about Provene.
+
+**Regenerate the manifest; never verify one you were sent.** Verifying a supplied manifest proves that *that file* was attested, not that your repository matches it. `provene verify-aggregate` always regenerates, which is why it is the safer of the two paths.
 
 Full specification, threat model and conformance suite: **https://github.com/provene-hq/provene**
 

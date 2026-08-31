@@ -201,7 +201,18 @@ export interface AggregateCheck {
  */
 export function checkAggregate(
   statement: unknown,
-  actual: { readonly subjectDigest: string; readonly base?: string; readonly commitsInRange?: number },
+  actual: {
+    readonly subjectDigest: string;
+    readonly base?: string;
+    readonly commitsInRange?: number;
+    /**
+     * Identities from the certificate the verifier checked. Supplied so the
+     * predicate's claim about who attested it can be held against who actually
+     * signed it — a workflow that signs an aggregate naming a different
+     * workflow as attester is describing an event that did not happen.
+     */
+    readonly signerIdentities?: readonly string[];
+  },
 ): AggregateCheck {
   const problems: string[] = [];
   const notes: string[] = [];
@@ -259,6 +270,25 @@ export function checkAggregate(
     }
   }
 
+  // Who the predicate says attested it, against who the certificate says signed
+  // it. Both are inside the signature, so a mismatch is not forgery from
+  // outside -- it is a workflow signing a document that names another workflow,
+  // which is either a bug in an emitter or an attempt to borrow a trusted
+  // workflow's name inside a repository the attacker can already run jobs in.
+  const declaredAttester = pred["attestation"]?.attester?.identity;
+  const ids = actual.signerIdentities ?? [];
+  if (typeof declaredAttester === "string" && declaredAttester !== "" && ids.length > 0) {
+    const bare = (v: string): string => v.replace(/^https?:\/\/[^/]+\//, "");
+    if (!ids.some((id) => bare(id) === bare(declaredAttester))) {
+      problems.push(
+        `the predicate names ${declaredAttester} as attester, but the certificate ` +
+        `identifies ${ids.join(", ")}`,
+      );
+    }
+  } else if (typeof declaredAttester === "string" && declaredAttester !== "") {
+    notes.push(`attester ${declaredAttester} could not be checked against the certificate`);
+  }
+
   const coverage = pred["coverage"] ?? {};
   if (coverage["complete"] === false) {
     notes.push(`coverage incomplete: ${coverage["constituentsFound"] ?? 0} constituent receipt(s) ` +
@@ -272,4 +302,52 @@ export function checkAggregate(
   }
 
   return { ok: problems.length === 0, tier, problems, notes };
+}
+
+/**
+ * The verification verdict, as data.
+ *
+ * This exists because the decision — not the parsing, not the shelling out —
+ * is where this command failed open. `verify-aggregate` printed "the
+ * predicate's own claims were NOT checked" and then returned 0, so a CI gate
+ * reading the exit code was told the opposite of what the text said. The code
+ * contradicted its own comment, which is what a decision buried inside a
+ * print-and-return function makes easy.
+ *
+ * Every degraded state a verifier can leave us in has to name itself here, and
+ * `code` is derived from the kind rather than chosen at each call site.
+ */
+export type VerifyOutcome =
+  /** The verifier is not installed. Nothing was checked. */
+  | { readonly kind: "no-verifier"; readonly code: 3 }
+  /** The verifier ran; nothing is signed for this change set. */
+  | { readonly kind: "no-attestation"; readonly code: 1 }
+  /** The verifier rejected the signature. */
+  | { readonly kind: "signature-invalid"; readonly code: 1 }
+  /**
+   * The verifier accepted the signature and we could not read back what was
+   * signed. NOT a pass: in `--bundle` mode the verifier does not match the
+   * subject digest at all, so without a readable statement nothing has bound
+   * the signature to this change set. Exit 3, the same "could not check" a
+   * missing verifier gets, because that is exactly what it is.
+   */
+  | { readonly kind: "unreadable"; readonly code: 3 }
+  /** Signature valid, but what it signed is not the work in front of you. */
+  | { readonly kind: "not-this-change"; readonly code: 1 }
+  | { readonly kind: "verified"; readonly code: 0 };
+
+export function decideVerification(
+  gh: Pick<GhResult, "verified" | "ran" | "noAttestation" | "statements">,
+  /** One per statement gh returned, in order. */
+  checks: readonly AggregateCheck[],
+): VerifyOutcome {
+  if (!gh.verified) {
+    if (!gh.ran) return { kind: "no-verifier", code: 3 };
+    if (gh.noAttestation) return { kind: "no-attestation", code: 1 };
+    return { kind: "signature-invalid", code: 1 };
+  }
+  // gh exited zero and we have nothing to inspect. Fail closed.
+  if (gh.statements.length === 0 || checks.length === 0) return { kind: "unreadable", code: 3 };
+  if (checks.some((c) => !c.ok)) return { kind: "not-this-change", code: 1 };
+  return { kind: "verified", code: 0 };
 }
