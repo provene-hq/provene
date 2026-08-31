@@ -4,7 +4,7 @@ import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync
 import { join } from "node:path";
 import { diffEntries, repoRoot, headCommit, rootCommit, git } from "./git.ts";
 import { append, read, journalDir, recordError, markEmitted, orphanedSessions } from "./journal.ts";
-import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID } from "./redact.ts";
+import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID, TEST_SHAPES } from "./redact.ts";
 import { buildT0, canonicalJson, checkStatement, receiptFileName, type Statement } from "./receipt.ts";
 import { changeDigest } from "./changedigest.ts";
 import { runCheck, annotations, summary } from "./check.ts";
@@ -55,6 +55,21 @@ function cmdEmit(args: Record<string, string | boolean>): number {
         ...(e.durationMs !== undefined ? { durationMs: e.durationMs } : {}),
         observedBy: "local",
       }));
+    // A test command the hook observed becomes a verification run -- observed
+    // LOCALLY, which under our own tiering satisfies no policy (RFC 0002 7.3
+    // requires observedBy: ci). Recording it anyway is the difference between a
+    // receipt that says what it saw and one that says nothing at all.
+    const runs = commands.flatMap((c, i) =>
+      c.shape !== undefined && TEST_SHAPES.has(c.shape) && c.exitCode !== undefined
+        ? [{
+            id: `local-${i}`,
+            kind: "test" as const,
+            tool: c.argv0,
+            result: (c.exitCode === 0 ? "PASSED" : "FAILED") as "PASSED" | "FAILED",
+            observedBy: "local" as const,
+          }]
+        : []);
+
     const attributedPaths = [...new Set(
       journal.filter((e) => e.kind === "edit" && e.path !== undefined).map((e) => e.path!),
     )];
@@ -77,7 +92,7 @@ function cmdEmit(args: Record<string, string | boolean>): number {
       emitter: { name: "provene", version: VERSION },
       session: { id: sessionId, startedAt: journal[0]?.at ?? new Date().toISOString(),
                  endedAt: new Date().toISOString(), toolCalls: journal.length },
-      commands, attributedPaths,
+      commands, runs, attributedPaths,
     });
     (statement.predicate as Record<string, unknown>)["redaction"] =
       { pathsExcluded: false, allowlistId: ALLOWLIST_ID };
@@ -88,8 +103,13 @@ function cmdEmit(args: Record<string, string | boolean>): number {
     markEmitted(sessionId, changeDigest(entries));
     out(`provene: wrote ${rel}`);
     out(`  tier T0 (unsigned) · ${entries.length} paths · change ${changeDigest(entries).slice(0, 12)}`);
-    const unattributed = (statement.predicate as any).verification.unverifiedPaths as string[];
-    if (unattributed.length > 0) out(`  ${unattributed.length} path(s) with no verification evidence`);
+    const unverified = (statement.predicate as any).verification.unverifiedPaths as string[];
+    if (runs.length > 0) {
+      const passed = runs.filter((r) => r.result === "PASSED").length;
+      out(`  ${runs.length} local test run(s) observed, ${passed} passed ` +
+          `(observedBy: local — satisfies no policy on its own)`);
+    }
+    if (unverified.length > 0) out(`  ${unverified.length} path(s) with no verification evidence`);
     return 0;
   } catch (err) {
     // Fail closed toward evidence, open toward the developer.
@@ -114,11 +134,18 @@ function cmdVerify(args: Record<string, string | boolean>): number {
         return { entries: diffEntries(sha), parent: sha };
       })()
     : undefined;
-  const r = checkStatement(statement, against);
+  // The filename declares the encoding (RFC 0001 8), so verify must consult it
+  // too -- otherwise a signed receipt would be reported as unsigned here while
+  // `check` reported it correctly.
+  const r = checkStatement(statement, against, file.endsWith(".dsse.json"));
   if (r.ok) {
-    out(`provene: receipt is well formed · tier ${r.tier}`);
+    const a = r.assurance;
+    const shown = a.kind === "signed" ? a.tier
+      : a.declared === "T0" || a.declared === "unknown" ? "T0"
+      : `T0 (unsigned; the document claims ${a.declared})`;
+    out(`provene: receipt is well formed · ${shown}`);
     if (r.rebased) out("  note: change content matches but the parent differs — rebased");
-    if (r.tier === "T0" || r.tier === "T1") {
+    if (a.kind === "unsigned" || a.tier === "T0" || a.tier === "T1") {
       out("  this receipt is a self-attestation and satisfies no policy on its own");
     }
     return 0;

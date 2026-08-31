@@ -65,9 +65,13 @@ export function toJournalEntries(p: HookPayload): JournalEntry[] {
   if (tool === "Bash") {
     const command = input["command"];
     if (typeof command !== "string" || command.trim() === "") return [];
+    // The event name carries the outcome, so we never parse tool output to find
+    // it: PostToolUse fires on success, PostToolUseFailure on failure. That is a
+    // documented contract, unlike the shape of tool_response.
+    const failed = p.hook_event_name === "PostToolUseFailure";
     // The journal holds the raw command; it lives outside the repository and is
     // never committed. Redaction happens when the receipt is built (RFC 0001 10).
-    return [{ at, kind: "command", argv: command.split(/\s+/) }];
+    return [{ at, kind: "command", argv: command.split(/\s+/), exitCode: failed ? 1 : 0 }];
   }
 
   return [];

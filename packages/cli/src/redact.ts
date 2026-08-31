@@ -20,6 +20,17 @@ export const DEFAULT_ALLOWLIST: readonly string[] = [
 ];
 export const ALLOWLIST_ID = "provene-default-v1";
 
+/**
+ * Allowlist entries that are test invocations. Only these become verification
+ * runs: we know exactly what they mean, and guessing from a command's shape is
+ * how a build script gets recorded as a passing test suite.
+ */
+export const TEST_SHAPES = new Set<string>([
+  "npm test", "npm run test", "pnpm test", "yarn test",
+  "pytest", "python -m pytest",
+  "cargo test", "go test ./...", "make test",
+]);
+
 export function deriveSalt(rootCommit: string): Buffer {
   return createHash("sha256").update(`provene-salt-v1:${rootCommit}`, "utf8").digest();
 }

@@ -110,7 +110,18 @@ function untrackedEntries(cwd?: string): ChangeEntry[] {
 export function diffEntries(base: string, cwd?: string): ChangeEntry[] {
   // -z already defeats path quoting for --raw, but core.quotePath is pinned so
   // behaviour does not depend on the user's configuration.
-  const raw = execFileSync("git", ["-c", "core.quotePath=false", "diff", "--raw", "-M", "-z", base], {
+  // core.abbrev=no is essential, not cosmetic. `git diff --raw` ABBREVIATES
+  // object ids by default -- seven characters -- so a tracked modification was
+  // recorded with a truncated blob while an untracked file, hashed directly,
+  // got the full forty. The same content therefore produced different digests
+  // before and after being committed, and the abbreviated form does not even
+  // satisfy this project's own JSON Schema. Found by a property test asserting
+  // that committing unchanged content leaves the digest alone.
+  // Preferred over --abbrev=40, which would be wrong in a SHA-256 repository.
+  const raw = execFileSync("git", [
+    "-c", "core.quotePath=false", "-c", "core.abbrev=no",
+    "diff", "--raw", "-M", "-z", base,
+  ], {
     encoding: "utf8",
     cwd: cwd ?? process.cwd(),
     maxBuffer: 64 * 1024 * 1024,

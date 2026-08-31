@@ -10,11 +10,11 @@ branding:
 inputs:
   version:
     description: >-
-      Version of the provene CLI to install. Pinned by default: `latest` would
-      mean every consumer's CI executes whatever was published most recently,
-      so one compromised npm publish reaches every pipeline using this action --
-      in a supply-chain provenance tool. Override deliberately if you want to
-      track releases.
+      Fallback only. The action normally runs the CLI bundled at the ref you
+      pinned, with no install at all; this version is used solely when the
+      runner's Node is too old to execute TypeScript sources. Never `latest`:
+      that would mean every consumer's CI executes whatever was published most
+      recently, so one compromised publish reaches every pipeline.
     required: false
     default: "0.0.8"
   base:
@@ -30,6 +30,12 @@ inputs:
       than implying coverage it does not have.
     required: false
     default: ""
+  exclude:
+    description: >-
+      Comma-separated globs excluded from evidence reporting, for generated or
+      vendored paths a regex cannot recognise.
+    required: false
+    default: ""
   fail-on-invalid-receipt:
     description: >-
       Fail the check when a receipt is malformed. A forgeable receipt is worse
@@ -40,36 +46,64 @@ inputs:
 runs:
   using: composite
   steps:
-    - name: Install provene
-      shell: bash
-      run: npm install -g proveneio@${{ inputs.version }}
-
     - name: Ensure the base commit is present
       shell: bash
       env:
         PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
       run: |
-        # actions/checkout defaults to fetch-depth 1, so the pull request base
-        # is usually absent and `git rev-parse` on it fails. Fetch just that
-        # commit rather than requiring every consumer to set fetch-depth: 0.
+        # actions/checkout defaults to fetch-depth 1, so the pull request base is
+        # usually absent and `git rev-parse` on it fails. Fetch just that commit
+        # rather than requiring every consumer to set fetch-depth: 0.
         if [ -n "${PROVENE_BASE:-}" ] && ! git rev-parse --verify --quiet "$PROVENE_BASE^{commit}" >/dev/null; then
-          echo "base $PROVENE_BASE not present in this clone; fetching it"
-          git fetch --no-tags --depth=1 origin "$PROVENE_BASE" ||             echo "provene: could not fetch the base commit; check will report what it can"
+          git fetch --no-tags --depth=1 origin "$PROVENE_BASE" \
+            || echo "provene: could not fetch the base commit; check will report what it can"
+        fi
+
+    - name: Resolve the provene CLI
+      id: cli
+      shell: bash
+      env:
+        PROVENE_VERSION: ${{ inputs.version }}
+      run: |
+        # Prefer running the CLI that ships INSIDE this action, at whatever ref
+        # you pinned. It has no runtime dependencies, so Node executes the
+        # TypeScript sources directly with no install and no bundler.
+        #
+        # This is the point: installing from npm at run time means one
+        # compromised publish reaches every consumer's CI, in a supply-chain
+        # provenance tool. Pinning the action to a tag or SHA now pins the code
+        # that actually runs.
+        SRC="$GITHUB_ACTION_PATH/packages/cli/src/cli.ts"
+        MAJOR=$(node -p "process.versions.node.split('.')[0]")
+        MINOR=$(node -p "process.versions.node.split('.')[1]")
+        if [ -f "$SRC" ] && { [ "$MAJOR" -ge 23 ] || { [ "$MAJOR" -eq 22 ] && [ "$MINOR" -ge 6 ]; }; }; then
+          echo "cmd=node $SRC" >> "$GITHUB_OUTPUT"
+          echo "provene: running the CLI bundled with this action (node $(node -v))"
+        else
+          # Node too old to strip types. Fall back to a PINNED npm version --
+          # never @latest, which would execute whatever was published most
+          # recently.
+          npm install -g "proveneio@${PROVENE_VERSION}"
+          echo "cmd=provene" >> "$GITHUB_OUTPUT"
+          echo "provene: node $(node -v) cannot run TypeScript sources; installed proveneio@${PROVENE_VERSION}"
         fi
 
     - name: Check receipts and evidence
       shell: bash
       env:
+        PROVENE_CMD: ${{ steps.cli.outputs.cmd }}
         PROVENE_BASE: ${{ inputs.base != '' && inputs.base || github.event.pull_request.base.sha }}
         PROVENE_COVERAGE: ${{ inputs.coverage }}
+        PROVENE_EXCLUDE: ${{ inputs.exclude }}
         PROVENE_STRICT: ${{ inputs.fail-on-invalid-receipt }}
       run: |
         set -uo pipefail
         args=(check --annotate github)
         [ -n "${PROVENE_BASE:-}" ] && args+=(--base "$PROVENE_BASE")
         [ -n "${PROVENE_COVERAGE:-}" ] && args+=(--coverage "$PROVENE_COVERAGE")
+        [ -n "${PROVENE_EXCLUDE:-}" ] && args+=(--exclude "$PROVENE_EXCLUDE")
 
-        provene "${args[@]}" | tee "$RUNNER_TEMP/provene.txt"
+        $PROVENE_CMD "${args[@]}" | tee "$RUNNER_TEMP/provene.txt"
         status=${PIPESTATUS[0]}
 
         {

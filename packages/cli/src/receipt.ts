@@ -15,6 +15,14 @@ export interface Statement {
   readonly predicate: Record<string, unknown>;
 }
 
+export interface VerificationRun {
+  readonly id: string;
+  readonly kind: "test";
+  readonly tool: string;
+  readonly result: "PASSED" | "FAILED";
+  readonly observedBy: "local";
+}
+
 export interface BuildInput {
   readonly subjectName: string;
   readonly entries: readonly ChangeEntry[];
@@ -25,6 +33,7 @@ export interface BuildInput {
   readonly session?: { id: string; startedAt: string; endedAt: string; toolCalls: number };
   readonly emitter: { name: string; version: string };
   readonly commands: readonly RedactedCommand[];
+  readonly runs: readonly VerificationRun[];
   readonly attributedPaths: readonly string[];
 }
 
@@ -73,7 +82,7 @@ export function buildT0(input: BuildInput): Statement {
       },
       commands: input.commands,
       verification: {
-        runs: [],
+        runs: input.runs,
         // RFC 0001 6.6: paths that no verification RUN covers. A T0 receipt has
         // no runs, so every changed path is unverified -- which is the true claim.
         unverifiedPaths: changed.map((e) => e.path),
@@ -96,9 +105,22 @@ export function statementDigest(serialized: string): string {
   return `sha256:${createHash("sha256").update(serialized, "utf8").digest("hex")}`;
 }
 
+/**
+ * What a receipt's tier is actually worth.
+ *
+ * A union rather than a `Tier` plus a boolean, because the two situations are
+ * not the same fact at different confidences: a signed T2 is verified evidence,
+ * and an unsigned document saying "T2" is an assertion by whoever wrote the
+ * file. Collapsing them into one field is what let a fork's pull request be
+ * reported as CI-attested.
+ */
+export type Assurance =
+  | { readonly kind: "signed"; readonly tier: Tier }
+  | { readonly kind: "unsigned"; readonly declared: Tier | "unknown" };
+
 export interface CheckResult {
   readonly ok: boolean;
-  readonly tier: Tier | "unknown";
+  readonly assurance: Assurance;
   readonly problems: string[];
   readonly rebased: boolean;
 }
@@ -123,7 +145,9 @@ export function checkStatement(
   let rebased = false;
   const s = statement as Partial<Statement> | null;
 
-  if (s === null || typeof s !== "object") return { ok: false, tier: "unknown", problems: ["not an object"], rebased };
+  if (s === null || typeof s !== "object") {
+    return { ok: false, assurance: { kind: "unsigned", declared: "unknown" }, problems: ["not an object"], rebased };
+  }
   if (s._type !== STATEMENT_TYPE) problems.push(`_type must be ${STATEMENT_TYPE}`);
   if (s.predicateType !== PREDICATE_TYPE) problems.push(`predicateType must be ${PREDICATE_TYPE}`);
 
@@ -131,12 +155,13 @@ export function checkStatement(
   const declaredTier: Tier | "unknown" = pred["attestation"]?.tier ?? "unknown";
 
   // An unsigned receipt is T0 whatever it says about itself (RFC 0001 3, 7).
-  let tier: Tier | "unknown" = declaredTier;
+  const assurance: Assurance = signed
+    ? { kind: "signed", tier: declaredTier === "unknown" ? "T0" : declaredTier }
+    : { kind: "unsigned", declared: declaredTier };
   if (!signed && declaredTier !== "T0" && declaredTier !== "unknown") {
     problems.push(
       `unsigned receipt declares tier ${declaredTier}; an unsigned statement can only be T0`,
     );
-    tier = "T0";
   }
   if (pred["provene"] !== "0.1") problems.push("predicate.provene must be \"0.1\"");
   if (pred["changes"]?.granularity === "file") {
@@ -180,5 +205,5 @@ export function checkStatement(
       rebased = true;
     }
   }
-  return { ok: problems.length === 0, tier, problems, rebased };
+  return { ok: problems.length === 0, assurance, problems, rebased };
 }

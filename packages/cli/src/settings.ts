@@ -54,6 +54,10 @@ export function withProveneHooks(settings: Settings): { next: Settings; added: s
   // Append-only, no crypto, no git, no network. Kept fast because it fires on
   // every matching tool call.
   install("PostToolUse", "Edit|Write|MultiEdit|NotebookEdit|Bash", RECORD_COMMAND, 5);
+  // Also on failure: the event name is how we learn a command's outcome without
+  // parsing tool output, which is what lets a test command become verification
+  // evidence rather than just a recorded invocation.
+  install("PostToolUseFailure", "Bash", RECORD_COMMAND, 5);
 
   // SessionEnd, not Stop. A Stop hook can block with exit code 2 and force the
   // session to continue; SessionEnd structurally cannot. The emitter must never
@@ -77,8 +81,11 @@ export function writeSettings(path: string, settings: Settings): string | undefi
 export function proveneHooksInstalled(settings: Settings): { record: boolean; emit: boolean } {
   const all = Object.values(settings.hooks ?? {}).flat();
   const commands = all.flatMap((g) => (g.hooks ?? []).map((h) => h.command));
+  const events = Object.entries(settings.hooks ?? {})
+    .filter(([, groups]) => groups.some((g) => (g.hooks ?? []).some((h) => h.command === RECORD_COMMAND)))
+    .map(([e]) => e);
   return {
-    record: commands.includes(RECORD_COMMAND),
+    record: commands.includes(RECORD_COMMAND) && events.includes("PostToolUseFailure"),
     emit: commands.includes(EMIT_COMMAND),
   };
 }
