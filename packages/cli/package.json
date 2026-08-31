@@ -1,6 +1,6 @@
 {
   "name": "proveneio",
-  "version": "0.0.9",
+  "version": "0.1.0",
   "description": "Portable, signed evidence receipts for AI-generated code changes",
   "license": "Apache-2.0",
   "type": "module",
@@ -19,7 +19,8 @@
     "test": "node --test test/*.test.ts",
     "conformance": "node --test test/conformance.test.ts",
     "prepublishOnly": "npm run build",
-    "test:coverage": "node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=coverage/lcov.info --test-reporter=spec --test-reporter-destination=stdout 'test/*.test.ts'"
+    "test:coverage": "node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=coverage/lcov.info --test-reporter=spec --test-reporter-destination=stdout 'test/*.test.ts'",
+    "samples": "node scripts/emit-samples.ts ../../.samples"
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

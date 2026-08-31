@@ -356,7 +356,9 @@
                   "A",
                   "M",
                   "D",
-                  "R"
+                  "R",
+                  "C",
+                  "T"
                 ]
               },
               "prePath": {
@@ -406,10 +408,14 @@
             },
             "allOf": [
               {
+                "comment": "Renames and copies both carry a pre-image path.",
                 "if": {
                   "properties": {
                     "status": {
-                      "const": "R"
+                      "enum": [
+                        "R",
+                        "C"
+                      ]
                     }
                   },
                   "required": [
@@ -468,7 +474,8 @@
         "properties": {
           "argv0": {
             "type": "string",
-            "minLength": 1
+            "minLength": 1,
+            "description": "The command name, with any leading environment assignments skipped. Never empty: a line consisting only of assignments named no command and is not recorded at all."
           },
           "shape": {
             "type": "string",

@@ -10,7 +10,7 @@
  */
 import { appendFileSync, mkdirSync, readFileSync, existsSync, readdirSync } from "node:fs";
 import { homedir } from "node:os";
-import { join } from "node:path";
+import { join, resolve, sep } from "node:path";
 
 export interface JournalEntry {
   readonly at: string;
@@ -24,6 +24,22 @@ export interface JournalEntry {
 
 export function journalDir(): string {
   return process.env["PROVENE_HOME"] ?? join(homedir(), ".provene");
+}
+
+/**
+ * The journal holds UNREDACTED commands -- raw argv, including any credentials
+ * an agent passed on a command line. Redaction happens when the receipt is
+ * built, not when the journal is written, precisely so the hook stays fast and
+ * dumb. That is only safe while the journal lives outside every repository.
+ *
+ * If it does not, `emit` records the journal itself as a changed file and the
+ * secrets it holds are committed. Found when a test harness pointed
+ * PROVENE_HOME inside a repository and the receipt listed the journal.
+ */
+export function journalInsideRepo(repoRoot: string): boolean {
+  const dir = resolve(journalDir());
+  const root = resolve(repoRoot);
+  return dir === root || dir.startsWith(root + sep);
 }
 
 export function journalPath(sessionId: string): string {

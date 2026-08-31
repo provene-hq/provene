@@ -77,6 +77,10 @@ export function redactCommand(
     // Belt and braces: nothing containing "=" is ever recorded in clear, even
     // if commandName is defeated by a shape POSIX permits and we did not model.
     argv0: argv0.includes("=") ? "" : argv0,
+    // NOTE: an empty argv0 means there was no command to name (the line was
+    // only assignments). Such entries are dropped by the caller rather than
+    // recorded -- the schema requires a non-empty argv0, and "a command with
+    // no name" is not a thing worth putting in a receipt.
     ...(shape !== undefined ? { shape } : {}),
     argvDigest: keyedDigest(salt, full),
     ...(opts.exitCode !== undefined ? { exitCode: opts.exitCode } : {}),

@@ -141,7 +141,7 @@ export function diffEntries(base: string, cwd?: string): ChangeEntry[] {
     const letter = statusField[0] as ChangeStatus | undefined;
     if (letter === undefined) break;
 
-    const isRenameOrCopy = letter === "R" || (letter as string) === "C";
+    const isRenameOrCopy = letter === "R" || letter === "C";
     const first = fields[i + 1] ?? "";
     const second = isRenameOrCopy ? (fields[i + 2] ?? "") : undefined;
     i += isRenameOrCopy ? 3 : 2;
@@ -149,9 +149,9 @@ export function diffEntries(base: string, cwd?: string): ChangeEntry[] {
     const path = second ?? first;
     if (isNullOid(postBlob) && letter !== "D") needHashing.push(path);
     pending.push({
-      status: letter === "R" ? "R" : letter,
+      status: letter,
       path,
-      ...(letter === "R" ? { prePath: first } : {}),
+      ...(isRenameOrCopy ? { prePath: first } : {}),
       preBlob: isNullOid(preBlob) ? "-" : preBlob,
       // A working-tree modification has no blob object yet, so git reports
       // all-zeros for the post image. Hashing the file gives the digest real

@@ -39,6 +39,14 @@ jobs:
       - name: Conformance suite
         run: python3 spec/conformance/runner/run.py
 
+      # The schema existed from day one and nothing checked emitter output
+      # against it, so two defects shipped that the schema itself forbade.
+      - name: Emitted receipts satisfy the schema
+        run: |
+          python3 -m pip install --quiet jsonschema
+          node packages/cli/scripts/emit-samples.ts "$RUNNER_TEMP/samples"
+          python3 spec/conformance/runner/validate_receipts.py "$RUNNER_TEMP/samples" spec/examples
+
       - name: Provene
         if: github.event_name == 'pull_request'
         uses: ./

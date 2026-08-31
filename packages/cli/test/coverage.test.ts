@@ -72,9 +72,18 @@ test("a file of a kind the run never instruments is not evidence of anything", (
   assert.equal(f.kind, "not-instrumentable");
 });
 
-test("declaration files can never be covered and are never warned about", () => {
-  for (const p of ["src/types.ts", "src/api.d.ts", "types.ts"]) {
+test("only .d.ts is structurally type-only", () => {
+  for (const p of ["src/api.d.ts", "api.d.ts", "deep/nested/x.d.ts"]) {
     assert.equal(only(new Map([[p, new Set([1])]])).kind, "declaration", p);
+  }
+});
+
+test("a file merely NAMED types.ts is still untested code", () => {
+  // types.ts routinely holds runtime validators and type guards. Classifying it
+  // as a declaration suppressed warnings about hundreds of untested lines --
+  // a false negative, and nobody notices the warning that never appeared.
+  for (const p of ["src/types.ts", "types.ts", "src/type.ts"]) {
+    assert.equal(only(new Map([[p, new Set([1])]])).kind, "untested", p);
   }
 });
 

@@ -69,7 +69,17 @@ export function parseLcov(text: string): Map<string, Map<number, number>> {
  * never appear in a coverage report. Warning that "no test loads this" about a
  * file no test could ever execute is how thirty real warnings get ignored.
  */
-const TYPE_ONLY = /(^|\/)[^/]*\.d\.ts$|(^|\/)types?\.ts$/;
+/**
+ * Only `.d.ts` is structurally incapable of containing executable code. A file
+ * merely NAMED types.ts routinely holds runtime validators and type guards, and
+ * treating it as a declaration silently suppressed warnings about hundreds of
+ * untested lines -- a false negative, which is worse here than a false positive
+ * because nobody notices the warning that never appeared.
+ *
+ * Everything else reaches the "declaration" state only when the coverage report
+ * itself confirms no executable line changed.
+ */
+const TYPE_ONLY = /\.d\.ts$/;
 
 /**
  * The state of one changed file with respect to test evidence.

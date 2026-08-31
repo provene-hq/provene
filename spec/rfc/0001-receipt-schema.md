@@ -3,7 +3,7 @@
 | | |
 |---|---|
 | **Status** | Draft |
-| **Version** | 0.1.4 |
+| **Version** | 0.1.5 |
 | **Predicate type** | `https://provene.dev/attestation/code-change/v0.1` |
 | **Date** | 2026-08-30 |
 | **Supersedes** | — |
@@ -64,7 +64,7 @@ The change digest is computed as follows. Implementations MUST follow it exactly
 
 1. Compute the set of paths that differ between the pre-session tree and the post-session tree.
 2. **Exclude every path matching `.provene/**`.**
-3. For each remaining path, form the line `<status> <path> <preBlob> <postBlob>` where `status` is one of `A`, `M`, `D`, `R`; `path` is the repository-relative path, byte-exact; and `preBlob`/`postBlob` are the git blob object IDs, or the literal `-` where the side does not exist. For a rename, `path` is the post-image path and a second field `<-<prePath>` is appended.
+3. For each remaining path, form the line `<status> <path> <preBlob> <postBlob>` where `status` is one of `A` (added), `M` (modified), `D` (deleted), `R` (renamed), `C` (copied) or `T` (type changed — a file becoming a symlink or submodule, or the reverse); `path` is the repository-relative path, byte-exact; and `preBlob`/`postBlob` are the git blob object IDs, or the literal `-` where the side does not exist. For a rename or a copy, `path` is the post-image path and a second field `<-<prePath>` is appended.
 4. Sort the lines by `path` as raw bytes, ascending. Join with `\n` (no trailing newline). Encode UTF-8.
 5. `changeDigest` = lowercase hex SHA-256 of those bytes.
 
@@ -369,6 +369,7 @@ Marked for external review; none block a reference implementation.
 
 ## Changelog
 
+- **0.1.5** (2026-08-31) — `C` and `T` added to the status letters. `git diff --raw` emits both, so a repository using copies, symlinks or submodules produced receipts its own schema rejected. Found by a reviewer reading the generator in the property tests rather than the code.
 - **0.1.4** (2026-08-31) — `model` is optional and `modelSource` is required only alongside it. Found when wiring the real Claude Code hooks: the payload identifies the tool but not the model, and the previous shape forced an emitter to either invent a model or record a known agent as `unknown`.
 - **0.1.3** (2026-08-30) — added the required `emitter` field. Found when the CLI reported a hardcoded version that had drifted from its package metadata: a receipt named the agent that did the work but nothing about the software that wrote the receipt, so receipts produced by a defective emitter could not be identified afterwards. Sections renumbered from 6.2.
 - **0.1.2** (2026-08-30) — reference implementation. `unattributedPaths` renamed `unverifiedPaths`: the old name invited implementations to compute it from attribution rather than from verification runs, and one did. Added the normative requirement that `changes.files` reproduce the subject digest, after a tampered receipt verified clean.

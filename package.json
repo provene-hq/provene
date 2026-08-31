@@ -6,6 +6,7 @@
     "build": "npm --prefix packages/cli run build",
     "typecheck": "npm --prefix packages/cli run typecheck",
     "test": "node --test packages/cli/test/conformance.test.ts",
-    "conformance": "python spec/conformance/runner/run.py"
+    "conformance": "python spec/conformance/runner/run.py",
+    "schema": "npm --prefix packages/cli run samples && python spec/conformance/runner/validate_receipts.py .samples spec/examples"
   }
 }

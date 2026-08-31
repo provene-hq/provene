@@ -3,7 +3,7 @@
 import { readFileSync, writeFileSync, mkdirSync, existsSync, rmSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { diffEntries, repoRoot, headCommit, rootCommit, git } from "./git.ts";
-import { append, read, journalDir, recordError, markEmitted, orphanedSessions } from "./journal.ts";
+import { append, read, journalDir, recordError, markEmitted, orphanedSessions, journalInsideRepo } from "./journal.ts";
 import { deriveSalt, keyedDigest, redactCommand, ALLOWLIST_ID, TEST_SHAPES } from "./redact.ts";
 import { buildT0, canonicalJson, checkStatement, receiptFileName, type Statement } from "./receipt.ts";
 import { changeDigest } from "./changedigest.ts";
@@ -40,6 +40,12 @@ function cmdEmit(args: Record<string, string | boolean>): number {
   try {
     if (hookCwd !== undefined) process.chdir(hookCwd);
     const root = repoRoot();
+    if (journalInsideRepo(root)) {
+      out(`provene: refusing to emit — the journal is inside this repository (${journalDir()}).`);
+      out("  It holds unredacted commands, including any secrets passed on a command line,");
+      out("  and emitting would record it as a changed file. Set PROVENE_HOME outside the repo.");
+      return 1;
+    }
     // Resolve to a commit id. A receipt that records "HEAD" as its parent
     // records nothing: HEAD moves, and the binding must name a fixed commit.
     const base = git(["rev-parse", String(args["base"] ?? "HEAD")], root);
@@ -54,7 +60,10 @@ function cmdEmit(args: Record<string, string | boolean>): number {
         ...(e.exitCode !== undefined ? { exitCode: e.exitCode } : {}),
         ...(e.durationMs !== undefined ? { durationMs: e.durationMs } : {}),
         observedBy: "local",
-      }));
+      }))
+      // A line that was only environment assignments named no command. The
+      // schema requires a non-empty argv0 and there is nothing to record.
+      .filter((c) => c.argv0 !== "");
     // A test command the hook observed becomes a verification run -- observed
     // LOCALLY, which under our own tiering satisfies no policy (RFC 0002 7.3
     // requires observedBy: ci). Recording it anyway is the difference between a
@@ -184,8 +193,16 @@ function cmdCheck(args: Record<string, string | boolean>): number {
   // A malformed receipt always fails: a forgeable receipt is worse than none
   // (RFC 0002 section 9, receipt-integrity). Missing evidence is reported, not
   // failed -- that judgement belongs to a policy, which is a separate command.
-  const broken = result.receipts.filter((r) => !r.ok).length;
-  if (broken > 0) { out(`\n${broken} receipt(s) failed verification.`); return 1; }
+  // Only receipts THIS change introduced can fail the check. A malformed
+  // receipt committed months ago is worth reporting -- and is reported, in the
+  // summary -- but failing every future pull request over it would break CI
+  // permanently for work that did not touch it.
+  const broken = result.receipts.filter((r) => !r.ok && r.inRange).length;
+  const historical = result.receipts.filter((r) => !r.ok && !r.inRange).length;
+  if (historical > 0) {
+    out(`\n${historical} pre-existing receipt(s) fail verification; not caused by this change.`);
+  }
+  if (broken > 0) { out(`\n${broken} receipt(s) introduced by this change failed verification.`); return 1; }
   return 0;
 }
 
@@ -214,7 +231,10 @@ function cmdDoctor(): number {
   // install. What actually matters is whether we can write there when the
   // time comes.
   const jdir = journalDir();
-  if (existsSync(jdir)) {
+  if (root !== "" && journalInsideRepo(root)) {
+    checks.push(["fail", "journal directory",
+      `${jdir} is inside this repository; it holds unredacted commands and must not be committed`]);
+  } else if (existsSync(jdir)) {
     try {
       const probe = join(jdir, ".provene-write-probe");
       writeFileSync(probe, "", "utf8");
@@ -357,6 +377,11 @@ function parse(argv: readonly string[]): Record<string, string | boolean> {
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i]!;
     if (a.startsWith("--")) {
+      // --flag=value as well as --flag value. Without this, `--base=main`
+      // parsed as a flag literally named "base=main", so --base was undefined
+      // and check silently diffed HEAD against itself and passed.
+      const eq = a.indexOf("=");
+      if (eq > 2) { o[a.slice(2, eq)] = a.slice(eq + 1); continue; }
       const next = argv[i + 1];
       if (next !== undefined && !next.startsWith("--")) { o[a.slice(2)] = next; i++; }
       else o[a.slice(2)] = true;

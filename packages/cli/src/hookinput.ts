@@ -69,6 +69,13 @@ export function toJournalEntries(p: HookPayload): JournalEntry[] {
     // it: PostToolUse fires on success, PostToolUseFailure on failure. That is a
     // documented contract, unlike the shape of tool_response.
     const failed = p.hook_event_name === "PostToolUseFailure";
+    // The event name is the contract, but if the payload visibly contradicts it
+    // we record no outcome at all rather than assert a passing test. When two
+    // signals disagree the honest answer is silence, not the more convenient
+    // of the two.
+    const response = typeof p.tool_response === "string" ? p.tool_response : "";
+    const contradicted = !failed && /\bexit(?: code)? [1-9]\d*\b|\berror\b/i.test(response);
+    if (contradicted) return [{ at, kind: "command", argv: command.split(/\s+/) }];
     // The journal holds the raw command; it lives outside the repository and is
     // never committed. Redaction happens when the receipt is built (RFC 0001 10).
     return [{ at, kind: "command", argv: command.split(/\s+/), exitCode: failed ? 1 : 0 }];

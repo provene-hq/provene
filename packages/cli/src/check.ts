@@ -17,6 +17,8 @@ import { matches } from "./glob.ts";
 
 export interface ReceiptSummary {
   readonly file: string;
+  /** Introduced by this change. Only these may fail the check. */
+  readonly inRange: boolean;
   readonly assurance: Assurance;
   readonly ok: boolean;
   readonly problems: readonly string[];
@@ -68,12 +70,14 @@ export function runCheck(opts: {
   const head = opts.head ?? "HEAD";
   const all = loadReceipts(opts.root);
 
+  const inRange = receiptsInRange(opts.root, opts.base, head);
+
   const receipts = all.map(({ file, statement }) => {
     // The filename declares the encoding (RFC 0001 8): only a .dsse.json is a
     // signed envelope. Passed in rather than read from the document, because a
     // document's claim about its own trustworthiness is not evidence.
     const r = checkStatement(statement, undefined, file.endsWith(".dsse.json"));
-    return { file, assurance: r.assurance, ok: r.ok, problems: r.problems };
+    return { file, inRange: inRange.has(file), assurance: r.assurance, ok: r.ok, problems: r.problems };
   });
 
   const changed = changedLines(opts.base, head, opts.root);
@@ -87,7 +91,6 @@ export function runCheck(opts: {
   // receipt ever committed lives in .provene/, so reading all of them reported
   // a file an agent touched months ago as agent-authored in a pull request a
   // human wrote by hand.
-  const inRange = receiptsInRange(opts.root, opts.base, head);
   const attributed = new Set<string>();
   for (const { file, statement } of all) {
     if (!inRange.has(file)) continue;
@@ -159,7 +162,7 @@ export function summary(result: CheckResult): string[] {
     lines.push(`${good}/${result.receipts.length} receipt(s) well formed (${tiers})`);
   }
   for (const r of result.receipts.filter((x) => !x.ok)) {
-    lines.push(`  ${r.file} FAILED`);
+    lines.push(`  ${r.file} FAILED${r.inRange ? "" : " (pre-existing, not from this change)"}`);
     for (const p of r.problems) lines.push(`    - ${p}`);
   }
 

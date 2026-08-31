@@ -9,7 +9,15 @@
  */
 import { createHash } from "node:crypto";
 
-export type ChangeStatus = "A" | "M" | "D" | "R";
+/**
+ * Status letters `git diff --raw` can emit for a tracked change.
+ *
+ * A added, M modified, D deleted, R renamed, C copied, T type changed (a file
+ * becoming a symlink or a submodule, or the reverse). C and T were missing, so
+ * a repository using symlinks or submodules produced a receipt whose status
+ * letter its own JSON Schema rejects.
+ */
+export type ChangeStatus = "A" | "M" | "D" | "R" | "C" | "T";
 
 export interface ChangeEntry {
   readonly status: ChangeStatus;
@@ -26,9 +34,9 @@ export const DEFAULT_EXCLUDED_PREFIXES: readonly string[] = [".provene/"];
 
 function line(e: ChangeEntry): string {
   const base = `${e.status} ${e.path} ${e.preBlob} ${e.postBlob}`;
-  if (e.status !== "R") return base;
+  if (e.status !== "R" && e.status !== "C") return base;
   if (e.prePath === undefined) {
-    throw new Error(`rename entry for ${e.path} is missing prePath (RFC 0001 section 4.1)`);
+    throw new Error(`${e.status} entry for ${e.path} is missing prePath (RFC 0001 section 4.1)`);
   }
   return `${base} <-${e.prePath}`;
 }
