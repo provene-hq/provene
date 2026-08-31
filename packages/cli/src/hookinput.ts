@@ -133,6 +133,19 @@ export function geminiEntries(p: HookPayload): JournalEntry[] {
 
     // A background command has not finished, so its absent error means nothing
     // yet. Recording it as a pass would turn "we did not wait" into "it worked".
+    //
+    // `is_background` is NOT in Google's hooks reference. It is in the source:
+    // `ShellToolParams` in packages/core/src/tools/shell.ts declares `command`,
+    // `description`, `dir_path`, `is_background` and `delay_ms`, and the
+    // implementation returns early with a PID when the flag is set. Anyone
+    // checking this branch against the published reference will conclude it is
+    // dead code and delete it. It is not: it is the only thing standing between
+    // a command we did not wait for and a verification run that says it passed.
+    //
+    // `dir_path` is the other field worth knowing about. A command may run in a
+    // subdirectory of the session's cwd, which is what the journal records --
+    // still inside the repository, so scoping is unaffected, but the recorded
+    // directory is the session's, not the command's.
     if (input["is_background"] === true) {
       return [{ at, kind: "command", argv: command.trim().split(/\s+/), ...where }];
     }
