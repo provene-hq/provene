@@ -15,8 +15,14 @@ inputs:
       runner's Node is too old to execute TypeScript sources. Never `latest`:
       that would mean every consumer's CI executes whatever was published most
       recently, so one compromised publish reaches every pipeline.
+
+      Left empty, the version is read from the package.json bundled with this
+      action, so the fallback matches the ref you pinned rather than a string
+      that drifts from it. The previous hardcoded default was `0.0.8`, a
+      version that was never published — so the fallback path failed outright,
+      and nothing had ever executed it to notice.
     required: false
-    default: "0.0.8"
+    default: ""
   base:
     description: >-
       Commit to diff against. Defaults to the pull request's base, which is what
@@ -130,10 +136,28 @@ runs:
           # Node too old to strip types. Fall back to a PINNED npm version --
           # never @latest, which would execute whatever was published most
           # recently.
-          npm install -g "proveneio@${PROVENE_VERSION}"
+          #
+          # Default to the version bundled with this action, so the fallback
+          # tracks the ref the consumer pinned. A hardcoded default is a second
+          # source of truth for the same fact, and this one had drifted to a
+          # version that does not exist on the registry at all.
+          VERSION="${PROVENE_VERSION:-}"
+          if [ -z "$VERSION" ]; then
+            VERSION=$(node -p "require('$GITHUB_ACTION_PATH/packages/cli/package.json').version" 2>/dev/null || echo "")
+          fi
+          if [ -z "$VERSION" ]; then
+            echo "provene: cannot determine which CLI version to install, and this" >&2
+            echo "         runner's Node cannot execute the bundled sources." >&2
+            exit 1
+          fi
+          if ! npm install -g "proveneio@${VERSION}"; then
+            echo "provene: proveneio@${VERSION} could not be installed. The action is" >&2
+            echo "         pinned to a ref whose version is not on the registry." >&2
+            exit 1
+          fi
           echo "runner=provene" >> "$GITHUB_OUTPUT"
           echo "script=" >> "$GITHUB_OUTPUT"
-          echo "provene: node $(node -v) cannot run TypeScript sources; installed proveneio@${PROVENE_VERSION}"
+          echo "provene: node $(node -v) cannot run TypeScript sources; installed proveneio@${VERSION}"
         fi
 
     - name: Check receipts and evidence
