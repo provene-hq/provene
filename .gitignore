@@ -34,3 +34,14 @@ m
 .env
 .env.*
 !.env.example
+
+# Scratch scripts an agent left in the repository root while probing another
+# agent. Committed once by a `git add -A` that assumed the working tree was
+# mine. Ignored so the same accident cannot repeat.
+/extract*.py
+/fail.js
+/pass.js
+/old.js
+/delete-me.js
+/rename-me.js
+/renamed.js

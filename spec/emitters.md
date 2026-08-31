@@ -105,17 +105,18 @@ provene init --agent gemini     # Gemini CLI
 
 The two are worth comparing, because the differences are where an integration built by assumption goes wrong. All three of these are silent failures if the shapes are assumed to match:
 
-| | Claude Code | Gemini CLI | Antigravity |
-|---|---|---|---|
-| how it is observed | hooks | hooks | transcript, afterwards |
-| settings | `~/.claude/settings.json` | `~/.gemini/settings.json` | none — `init` refuses |
-| tool events | `PostToolUse` **and** `PostToolUseFailure` | `AfterTool` only | none fire |
-| how an outcome is known | which event fired | `tool_response.error` | prose in the next step |
-| edit tools | `Write`, `Edit`, `MultiEdit` | `write_file`, `replace` | `replace_file_content`, `write_to_file` |
-| shell tool | `Bash` | `run_shell_command` | `run_command` |
-| hook timeout unit | seconds | **milliseconds** | n/a |
-| may a hook print? | yes | **no** — stdout is parsed as JSON | n/a |
-| when the receipt is written | session end, automatically | session end, automatically | **by hand** |
+| | Claude Code | Gemini CLI | Codex CLI | Antigravity |
+|---|---|---|---|---|
+| how it is observed | hooks | hooks | hooks | transcript, afterwards |
+| settings | `~/.claude/settings.json` | `~/.gemini/settings.json` | `~/.codex/hooks.json` | none — `init` refuses |
+| must hooks be switched on? | no | no | **yes** — `[features] hooks = true` | n/a |
+| tool events | `PostToolUse` **and** `PostToolUseFailure` | `AfterTool` only | `PostToolUse` on **success only** | none fire |
+| how an outcome is known | which event fired | `tool_response.error` | **whether `PostToolUse` fired at all** | prose in the next step |
+| edit tools | `Write`, `Edit`, `MultiEdit` | `write_file`, `replace` | `apply_patch` (a patch blob) | `replace_file_content`, `write_to_file` |
+| shell tool | `Bash` | `run_shell_command` | `Bash` | `run_command` |
+| hook timeout unit | seconds | **milliseconds** | not established | n/a |
+| may a hook print? | yes | **no** — stdout is parsed as JSON | yes — and stdout can **block** a tool | n/a |
+| when the receipt is written | session end, automatically | session end, automatically | session end, automatically | **by hand** |
 
 The timeout one is the quietest: reusing Claude's `5` in a Gemini config gives every hook five *milliseconds* before it is killed.
 
@@ -130,6 +131,107 @@ Not yet verified by running it: the `AfterTool` payload — `tool_name`, `tool_i
 **On reading the reference versus reading the source.** Gemini's hooks reference lists the payload fields and the `tool_response` shape, and it does not mention `is_background` on `run_shell_command`. The source does: `ShellToolParams` in `packages/core/src/tools/shell.ts` declares `command`, `description`, `dir_path`, `is_background` and `delay_ms`, and the tool returns early with a PID when the flag is set. That field is the only thing separating a command nobody waited for from a verification run asserting it passed — so an emitter written strictly from the published reference records background commands as passing tests. Read the reference to learn the contract; read the source before trusting that a field does not exist.
 
 **On naming the agent.** `--agent` is written into the hook command by `init`, never inferred at run time. Both agents send `session_id`, `cwd`, `hook_event_name`, `tool_name` and `tool_input`, so the payloads are not distinguishable by shape. A guess would be right most of the time, and a receipt naming the wrong agent is worse than one naming none.
+
+## Codex CLI — verified, and not yet wired
+
+Codex has a working hook system. Nothing here is from documentation; all of it
+was established by running Codex 0.147.0-alpha.6.5 and by reading the schemas
+embedded in its executable. It took five rounds of experiment, four of which
+were spent discovering that the shape everyone had written down was wrong.
+
+**Hooks are off by default and fail silently when off.** `[features] hooks =
+true` in `~/.codex/config.toml` — formerly `codex_hooks`, which still parses and
+emits a deprecation warning naming the new one. With the flag unset, a perfectly
+valid hooks file produces no error, no log line and no hooks.
+
+**The config shape is not what any secondary source says.** `~/.codex/hooks.json`,
+with event names as keys, each mapping to an array of groups, each group holding
+its own `hooks` array:
+
+```json
+{
+  "hooks": {
+    "PostToolUse": [
+      { "description": "provene",
+        "hooks": [ { "type": "command", "command": "provene record --stdin --agent codex-cli" } ] }
+    ]
+  }
+}
+```
+
+`command` is a **string**, not an argv array — an array produces `invalid type:
+sequence, expected a string`. Putting `command` directly on the group instead of
+inside its `hooks` array parses **without any error at all** and registers
+nothing, which is how two rounds of experiment concluded that hooks do not fire.
+A silent parse means nothing on this agent; only a positive control does.
+
+**Hooks are gated on directory trust,** independently of the git check.
+`--skip-git-repo-check` does not bypass it, and `--dangerously-bypass-hook-trust`
+governs hook review rather than directory trust.
+
+**The payload is Claude Code's, almost exactly:** `session_id`, `cwd`,
+`hook_event_name`, `tool_name`, `tool_input`, `tool_response`, `tool_use_id`,
+`transcript_path`, `turn_id`, `model`, `permission_mode`. The shell tool is
+called `Bash` and carries `tool_input.command`, exactly as Claude's does.
+
+### The outcome rule, which is the interesting part
+
+There is **no failure event**, and the embedded schema for the post-tool payload
+declares no `exit_code`, `status`, `success` or `error` property. `tool_response`
+is a bare string.
+
+That reads like a dead end and is not one. `PostToolUse` fires when a tool
+**succeeded** and does not fire otherwise — verified three ways: a process that
+printed normally and exited 1 did not fire it, the same process exiting 0 did,
+and a tool blocked by a `PreToolUse` hook did not. So the rule this project has
+held since its fifth review round still applies, because it never required a
+failure event — it required an event whose occurrence is trustworthy:
+
+    PostToolUse fires   ->  success, exit code 0, a verification run
+    PostToolUse absent  ->  no outcome recorded, fail closed
+
+Failures are never recorded, only omitted. That costs nothing: a receipt that
+declines to describe a failed run is honest, and unverified is already the safe
+default. The dangerous reading is the opposite one — had `PostToolUse` meant
+"ran" rather than "succeeded", an adapter would have recorded every failing test
+suite as a pass, silently. `exit 7` does not test that distinction, because it
+aborts the shell; a script that runs to completion and returns non-zero does.
+
+### `apply_patch` carries source code, and must be read narrowly
+
+Codex edits files through a tool named `apply_patch` whose `tool_input.command`
+is a patch blob:
+
+```
+*** Begin Patch
+*** Add File: add.js
++function add(a, b) {
++  return a + b;
++}
+*** End Patch
+```
+
+The added lines are the file's contents. An adapter treating this the way the
+Claude adapter treats `Bash` — splitting the command into argv and journalling
+it — writes source code into an unredacted journal outside the repository, which
+[RFC 0001 §10](rfc/0001-receipt-schema.md) forbids. Read the `*** Add File:` and
+`*** Update File:` header lines and nothing else. Never the `+` lines.
+
+Deletions and renames do not use `apply_patch` at all: Codex emits shell
+commands (`Remove-Item`, `Move-Item`) through `Bash`. So the patch verbs
+observed are only `Add File` and `Update File`.
+
+### Why there is no adapter yet
+
+Everything above is enough to write one, and it would be a row in the adapter
+table plus a small header parser. It is deliberately not written.
+
+The version is `0.147.0-alpha.6.5`; the flag enabling this whole surface was
+renamed during the release series we tested against, and the deprecation warning
+for the old name fires today. An adapter shipped against that is a deprecation
+notice waiting to be written, and this project has published enough of those.
+The contract is recorded here so that building it later costs an afternoon
+rather than five rounds.
 
 ## Reading a transcript
 
@@ -192,4 +294,4 @@ One more trap, which is specific but likely to recur: every argument *value* in 
 
 ## Agents not yet wired
 
-Cursor and Codex have no adapter. If you use one, the most useful contribution is not the adapter — it is the five experiments above, run against your agent and written down. Which lifecycle events exist, whether they fire, what the payload names its fields, and whether the outcome of a command is recoverable without parsing output. None of it is answerable by reading documentation; all of it is an afternoon with the tool installed. The adapter is easy once the contract is known, and unwritable until it is.
+Cursor has no adapter, and Codex has a documented contract but no adapter (above). If you use one, the most useful contribution is not the adapter — it is the five experiments above, run against your agent and written down. Which lifecycle events exist, whether they fire, what the payload names its fields, and whether the outcome of a command is recoverable without parsing output. None of it is answerable by reading documentation; all of it is an afternoon with the tool installed. The adapter is easy once the contract is known, and unwritable until it is.
