@@ -6,12 +6,15 @@ Portable, cryptographically signed evidence receipts for AI-generated code chang
 
 When a coding agent finishes a session, this CLI records what happened — which agent and model, from what task, which files changed, which commands ran, which tests executed and what they returned — as a signed artifact attached to the commit.
 
-**Pre-alpha.** `record`, `emit`, `verify` and `doctor` work. Signing, CI promotion, the GitHub Action and the policy engine are not built yet.
+**Pre-alpha.** `init`, `record`, `emit`, `verify` and `doctor` work. Signing, CI promotion, the GitHub Action and the policy engine are not built yet.
 
 ```sh
 npm i -g proveneio
-provene doctor
+provene init      # installs the Claude Code hooks (user-level)
+provene doctor    # confirms they are actually wired up
 ```
+
+`init` writes to `~/.claude/settings.json`, merging with whatever is already there and backing up the previous file. `PostToolUse` appends to a session journal outside your repository; `SessionEnd` writes the receipt. `SessionEnd` rather than `Stop`, because a `Stop` hook can block and force a session to continue — the emitter must never be able to interrupt your work.
 
 ## What a receipt does and does not prove
 
