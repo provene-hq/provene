@@ -1,5 +1,5 @@
 /**
- * Claude Code hook payloads.
+ * Agent hook payloads.
  *
  * Hooks receive JSON on stdin. We read only the fields we need and ignore the
  * rest: the payload shape is owned by a tool that ships breaking changes often,
@@ -19,6 +19,10 @@ export interface HookPayload {
   readonly tool_response?: unknown;
   readonly exit_reason?: string;
 }
+
+/** Both agents put the session id in the same place, which is luck, not design. */
+export const sessionIdOf = (p: HookPayload): string | undefined =>
+  typeof p.session_id === "string" && p.session_id !== "" ? p.session_id : undefined;
 
 /** Tools whose use means the agent produced file content. */
 const EDIT_TOOLS = new Set(["Edit", "Write", "MultiEdit", "NotebookEdit", "Update"]);
@@ -50,7 +54,7 @@ export function parsePayload(raw: string): HookPayload | undefined {
  * that fails loudly costs the developer their session; a hook that records
  * nothing costs one receipt, and the absence is detectable.
  */
-export function toJournalEntries(p: HookPayload): JournalEntry[] {
+export function claudeEntries(p: HookPayload): JournalEntry[] {
   const at = new Date().toISOString();
   const tool = p.tool_name ?? "";
   const input = p.tool_input ?? {};
@@ -79,6 +83,65 @@ export function toJournalEntries(p: HookPayload): JournalEntry[] {
     // The journal holds the raw command; it lives outside the repository and is
     // never committed. Redaction happens when the receipt is built (RFC 0001 10).
     return [{ at, kind: "command", argv: command.split(/\s+/), exitCode: failed ? 1 : 0 }];
+  }
+
+  return [];
+}
+
+/**
+ * Gemini CLI hook payloads.
+ *
+ * https://github.com/google-gemini/gemini-cli/blob/main/docs/hooks/reference.md
+ *
+ * Three differences from Claude Code, each of which would have been a silent
+ * bug if the shapes had been assumed to match.
+ *
+ * **There is no failure event.** Claude Code fires `PostToolUseFailure`, and
+ * this project's rule since round 5 has been to take a command's outcome from
+ * the event name and never from parsing tool output. Gemini has only
+ * `AfterTool`, so that rule cannot apply — but the reason behind it does not
+ * either. The rule existed because Claude's `tool_response` is an undocumented
+ * shape that changes; Gemini's reference specifies `tool_response` as
+ * `{ llmContent, returnDisplay, error? }` and calls it part of a stable API.
+ * Reading a documented field is not the same act as sniffing an undocumented
+ * one, and the difference is worth stating rather than quietly doing both.
+ *
+ * **The tools have different names and different arguments.** `write_file` and
+ * `replace` both take `file_path`; `run_shell_command` takes `command`.
+ *
+ * **A hook may not print.** Enforced by the caller, not here.
+ */
+const GEMINI_EDIT_TOOLS = new Set(["write_file", "replace"]);
+
+export function geminiEntries(p: HookPayload): JournalEntry[] {
+  const at = new Date().toISOString();
+  const tool = p.tool_name ?? "";
+  const input = p.tool_input ?? {};
+
+  if (GEMINI_EDIT_TOOLS.has(tool)) {
+    const path = input["file_path"];
+    return typeof path === "string" && path !== "" ? [{ at, kind: "edit", path }] : [];
+  }
+
+  if (tool === "run_shell_command") {
+    const command = input["command"];
+    if (typeof command !== "string" || command.trim() === "") return [];
+
+    // A background command has not finished, so its absent error means nothing
+    // yet. Recording it as a pass would turn "we did not wait" into "it worked".
+    if (input["is_background"] === true) {
+      return [{ at, kind: "command", argv: command.trim().split(/\s+/) }];
+    }
+
+    const response = p.tool_response;
+    if (typeof response !== "object" || response === null) {
+      // The documented field is missing, so the documented reading does not
+      // apply. Record that the command ran and claim nothing about its outcome.
+      return [{ at, kind: "command", argv: command.trim().split(/\s+/) }];
+    }
+    const error = (response as Record<string, unknown>)["error"];
+    const failed = error !== undefined && error !== null && error !== "";
+    return [{ at, kind: "command", argv: command.trim().split(/\s+/), exitCode: failed ? 1 : 0 }];
   }
 
   return [];

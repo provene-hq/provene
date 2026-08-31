@@ -103,7 +103,12 @@ Two things catch people in the first hour, and both look like the tool is broken
 
 ## Other agents
 
-Claude Code is the only agent wired up automatically, because it exposes lifecycle hooks that `provene init` can install. The format was never specific to it: `agent.vendor`, `agent.tool`, `agent.toolVersion` and `agent.model` have been in the schema since v0.1.
+```sh
+provene init                    # Claude Code
+provene init --agent gemini     # Gemini CLI
+```
+
+Two agents have their hooks written for them. The format was never specific to either: `agent.vendor`, `agent.tool`, `agent.toolVersion` and `agent.model` have been in the schema since v0.1.
 
 Any other agent integrates through two commands and no fork:
 
@@ -115,7 +120,9 @@ provene emit   --session s1 --base <commit-before> --tool gemini-cli --vendor go
 
 That produces the same receipt the hooks produce, including verification runs — the exit code is what makes a command into evidence. [`spec/emitters.md`](spec/emitters.md) is the contract: what to report, what never to record, and the one rule that matters most, which is not to guess. An emitter that infers a model from a version string makes `modelSource` worthless for everyone.
 
-**The interface is tested; specific agents are not.** `packages/cli/test/emitters.test.ts` drives the whole thing as a third-party emitter would, using nothing an agent other than Claude Code lacks. We have not run Cursor, Gemini CLI or Codex, and do not claim to support them. A working emitter for a second agent is the most useful contribution this project can take right now — the first one will find the assumptions the first emitter hid.
+Gemini CLI was worth wiring properly rather than treating as "Claude with different names", because almost nothing about it matches: it has no tool-failure event, so an outcome comes from `tool_response.error`; its hook timeouts are milliseconds where Claude's are seconds; and a hook may not print to stdout at all, which makes `emit` announcing where it wrote the receipt a protocol violation rather than a courtesy. Each of those is a silent failure if assumed. [`spec/emitters.md`](spec/emitters.md) has the comparison.
+
+**Cursor, Codex and Antigravity are not wired**, and are not claimed to be. Antigravity documents hooks, but whether its `PostToolUse` carries the tool call, and whether IDE hooks fire at all, are open questions that reading cannot settle. If you have one of those agents, running that experiment is more useful to this project than the adapter it would unblock.
 
 ## What a receipt proves, and what it does not
 

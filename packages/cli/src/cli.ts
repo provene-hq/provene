@@ -11,10 +11,11 @@ import { changeDigest, canonicalPayload } from "./changedigest.ts";
 import { runCheck, annotations, summary } from "./check.ts";
 import { buildAggregate, AGGREGATE_PREDICATE_TYPE } from "./promote.ts";
 import { writeManifest, ghVerify, checkAggregate, decideVerification } from "./attestation.ts";
-import { readStdin, parsePayload, toJournalEntries } from "./hookinput.ts";
+import { readStdin, parsePayload, sessionIdOf } from "./hookinput.ts";
+import { resolveAgent, agentNames, type AgentAdapter } from "./agents.ts";
 import {
   userSettingsPath, readSettings, withProveneHooks, writeSettings,
-  proveneHooksInstalled, RECORD_COMMAND, EMIT_COMMAND,
+  proveneHooksInstalled, hookCommand,
 } from "./settings.ts";
 import { createRequire } from "node:module";
 
@@ -25,19 +26,50 @@ import { createRequire } from "node:module";
 const VERSION = (createRequire(import.meta.url)("../package.json") as { version: string }).version;
 const out = (s: string): void => { process.stdout.write(s + "\n"); };
 
+/**
+ * Which agent are we speaking for?
+ *
+ * Explicit, never sniffed. Two agents both send `session_id` and `tool_name`,
+ * so guessing would usually be right and occasionally silently wrong, and a
+ * receipt naming the wrong agent is worse than one naming none.
+ */
+function agentOrExplain(command: string, args: Record<string, string | boolean>): AgentAdapter | undefined {
+  const asked = args["agent"] === undefined ? undefined : String(args["agent"]);
+  const agent = resolveAgent(asked);
+  if (agent === undefined) {
+    out(`provene ${command}: unknown agent ${asked}`);
+    out(`  known: ${agentNames().join(", ")}`);
+    out("  any other agent integrates through the flags in spec/emitters.md");
+  }
+  return agent;
+}
+
 function cmdEmit(args: Record<string, string | boolean>): number {
+  const agent = agentOrExplain("emit", args);
+  if (agent === undefined) return 2;
+  // Gemini CLI parses a hook's stdout as JSON and documents anything else as an
+  // error. Saying where the receipt went is a courtesy on one agent and a
+  // protocol violation on another, so the adapter decides, not this function.
+  const quiet = args["quiet"] === true || (args["stdin"] === true && agent.stdoutMustBeSilent);
+  const say = (line: string): void => { if (!quiet) out(line); };
+
   let sessionId = String(args["session"] ?? process.env["PROVENE_SESSION_ID"] ?? "");
   let hookCwd: string | undefined;
   let hookTool: string | undefined;
+  let hookVendor: string | undefined;
   if (args["stdin"] === true) {
     const payload = parsePayload(readStdin());
-    if (payload?.session_id !== undefined) sessionId = payload.session_id;
+    const fromHook = sessionIdOf(payload ?? {});
+    if (fromHook !== undefined) sessionId = fromHook;
     if (payload?.cwd !== undefined) hookCwd = payload.cwd;
-    // The payload arrived through a Claude Code hook, so the agent is known even
-    // though the payload never names it. Without this every hook-emitted receipt
+    // The payload arrived through a hook we installed, so the agent is known
+    // even though no payload names it. Without this every hook-emitted receipt
     // would record agent.tool as "unknown", which is the one thing a receipt
     // exists to say.
-    if (payload?.hook_event_name !== undefined) hookTool = "claude-code";
+    if (payload?.hook_event_name !== undefined) {
+      hookTool = agent.id;
+      hookVendor = agent.vendor;
+    }
   }
   if (sessionId === "") { out("provene emit: --session is required"); return 2; }
   try {
@@ -97,7 +129,8 @@ function cmdEmit(args: Record<string, string | boolean>): number {
         // RFC 0001 §6.1 has carried these since v0.1 and nothing could set
         // them, so every receipt named a tool and no vendor -- fine while one
         // agent existed, useless the moment a repository has receipts from two.
-        ...(args["vendor"] !== undefined ? { vendor: String(args["vendor"]) } : {}),
+        ...(args["vendor"] !== undefined ? { vendor: String(args["vendor"]) }
+            : hookVendor !== undefined ? { vendor: hookVendor } : {}),
         ...(args["tool-version"] !== undefined ? { toolVersion: String(args["tool-version"]) } : {}),
         // The hook payload does not carry the model, and we do not guess:
         // modelSource is only meaningful when a model is actually recorded.
@@ -125,15 +158,15 @@ function cmdEmit(args: Record<string, string | boolean>): number {
     mkdirSync(join(root, ".provene"), { recursive: true });
     writeFileSync(join(root, rel), canonicalJson(statement), "utf8");
     markEmitted(sessionId, changeDigest(entries));
-    out(`provene: wrote ${rel}`);
-    out(`  tier T0 (unsigned) · ${entries.length} paths · change ${changeDigest(entries).slice(0, 12)}`);
+    say(`provene: wrote ${rel}`);
+    say(`  tier T0 (unsigned) · ${entries.length} paths · change ${changeDigest(entries).slice(0, 12)}`);
     const unverified = (statement.predicate as any).verification.unverifiedPaths as string[];
     if (runs.length > 0) {
       const passed = runs.filter((r) => r.result === "PASSED").length;
-      out(`  ${runs.length} local test run(s) observed, ${passed} passed ` +
+      say(`  ${runs.length} local test run(s) observed, ${passed} passed ` +
           `(observedBy: local — satisfies no policy on its own)`);
     }
-    if (unverified.length > 0) out(`  ${unverified.length} path(s) with no verification evidence`);
+    if (unverified.length > 0) say(`  ${unverified.length} path(s) with no verification evidence`);
     return 0;
   } catch (err) {
     // Fail closed toward evidence, open toward the developer.
@@ -594,13 +627,16 @@ function cmdDoctor(args: Record<string, string | boolean>): number {
   // `init --settings <path>` writes here, so `doctor` has to look here too.
   // It did not, so the documented way to install into a non-default location
   // was followed by a checkup that reported the hooks missing.
-  const sPath = args["settings"] !== undefined ? String(args["settings"]) : userSettingsPath();
+  const agent = resolveAgent(args["agent"] === undefined ? undefined : String(args["agent"]))
+    ?? resolveAgent(undefined)!;
+  const sPath = args["settings"] !== undefined ? String(args["settings"]) : agent.settingsPath();
   try {
-    const installed = proveneHooksInstalled(readSettings(sPath));
+    const installed = proveneHooksInstalled(readSettings(sPath), agent);
     if (installed.record && installed.emit) {
-      checks.push(["ok", "hooks installed", sPath]);
+      checks.push(["ok", `hooks installed (${agent.label})`, sPath]);
     } else if (!installed.record && !installed.emit) {
-      checks.push(["warn", "hooks installed", `not found in ${sPath} — run \`provene init\``]);
+      checks.push(["warn", `hooks installed (${agent.label})`,
+        `not found in ${sPath} — run \`provene init${agent.id === "claude-code" ? "" : ` --agent ${agent.id}`}\``]);
     } else {
       checks.push(["fail", "hooks installed",
         `only ${installed.record ? "PostToolUse" : "SessionEnd"} is wired — receipts will be incomplete`]);
@@ -640,11 +676,17 @@ function cmdRecord(args: Record<string, string | boolean>): number {
   // no git, no network. It must be cheap and it must never fail a session.
   try {
     if (args["stdin"] === true) {
+      // Never returns non-zero on this path, whatever the payload. Gemini CLI
+      // reads exit code 2 from a hook as "block this tool", so a validation
+      // failure in the recorder would stop the agent doing its work -- an
+      // observer that can veto what it observes is not an observer.
+      const agent = resolveAgent(args["agent"] === undefined ? undefined : String(args["agent"]));
+      if (agent === undefined) return 0;
       const payload = parsePayload(readStdin());
       if (payload === undefined) return 0;
-      const sessionId = payload.session_id;
-      if (sessionId === undefined || sessionId === "") return 0;
-      for (const entry of toJournalEntries(payload)) append(sessionId, entry);
+      const sessionId = sessionIdOf(payload);
+      if (sessionId === undefined) return 0;
+      for (const entry of agent.parse(payload)) append(sessionId, entry);
       return 0;
     }
 
@@ -679,7 +721,9 @@ function cmdRecord(args: Record<string, string | boolean>): number {
 }
 
 function cmdInit(args: Record<string, string | boolean>): number {
-  const path = args["settings"] !== undefined ? String(args["settings"]) : userSettingsPath();
+  const agent = agentOrExplain("init", args);
+  if (agent === undefined) return 2;
+  const path = args["settings"] !== undefined ? String(args["settings"]) : agent.settingsPath();
   const dryRun = args["dry-run"] === true;
 
   let current;
@@ -690,7 +734,7 @@ function cmdInit(args: Record<string, string | boolean>): number {
     return 1;
   }
 
-  const { next, added } = withProveneHooks(current);
+  const { next, added } = withProveneHooks(current, agent);
   if (added.length === 0) {
     out(`provene: hooks already installed in ${path}`);
     out("  nothing to do");
@@ -710,13 +754,15 @@ function cmdInit(args: Record<string, string | boolean>): number {
   for (const a of added) out(`  + ${a}`);
   if (backup !== undefined) out(`  previous settings backed up to ${backup}`);
   out("");
-  out("  PostToolUse appends to a session journal outside this repository.");
-  out("  SessionEnd writes the receipt. SessionEnd is used rather than Stop");
-  out("  because a Stop hook can block and force the session to continue.");
+  const recordEvents = agent.hooks.filter((h) => h.command === "record").map((h) => h.event);
+  out(`  ${recordEvents.join(" and ")} ${recordEvents.length > 1 ? "append" : "appends"} to a session`);
+  out("  journal outside this repository.");
+  out("  SessionEnd writes the receipt. SessionEnd is used rather than a blocking");
+  out("  event because the emitter must never be able to interrupt your work.");
   out("");
-  out("  If Claude Code is running now, restart it: hooks are read when it starts,");
+  out(`  If ${agent.label} is running now, restart it: hooks are read when it starts,`);
   out("  so a session already open will not fire them and no receipt will appear.");
-  out("  Then run `provene doctor` to confirm the hook actually fired.");
+  out(`  Then run \`provene doctor${agent.id === "claude-code" ? "" : ` --agent ${agent.id}`}\` to confirm the hook fired.`);
   out("");
   out("  Receipts are written to .provene/ UNSTAGED. `git commit -am` will not");
   out("  pick one up, because -a stages modified tracked files and a new receipt");
@@ -745,7 +791,8 @@ function parse(argv: readonly string[]): Record<string, string | boolean> {
 
 function usage(): void {
   out("provene — evidence receipts for AI-generated code changes\n");
-  out("  provene init [--dry-run] [--settings <path>]           install the Claude Code hooks");
+  out("  provene init [--agent <name>] [--dry-run]              install an agent's hooks");
+  out("                                                         agents: " + agentNames().join(", "));
   out("  provene record --stdin                                 append a Claude Code hook payload");
   out("  provene record --session <id> --kind <k> [--path <p>]  append from any other agent");
   out("                 [--argv <cmd>] [--exit <n>]");

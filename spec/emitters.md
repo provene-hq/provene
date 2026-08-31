@@ -87,8 +87,35 @@ The first checks integrity and reports the tier. The second checks your output a
 
 `packages/cli/test/emitters.test.ts` drives this whole interface as a third-party emitter would, using nothing an agent other than Claude Code lacks. It is the executable version of this page.
 
-## Which agents are supported today
+## Which agents are wired automatically
 
-**Claude Code**, wired automatically by `provene init`, and tested end to end in CI on Linux, macOS and Windows.
+```sh
+provene init                    # Claude Code
+provene init --agent gemini     # Gemini CLI
+```
 
-**Everything else**, through the interface above. The interface is tested; specific agents are not, because we have not run them. If you build an emitter for one, open an issue — a working integration for a second agent is the most useful contribution this project can receive right now, and the first one will find the assumptions the first emitter hid.
+**Claude Code** and **Gemini CLI** both have their hooks written for them. Everything else uses the flag interface above.
+
+The two are worth comparing, because the differences are where an integration built by assumption goes wrong. All three of these are silent failures if the shapes are assumed to match:
+
+| | Claude Code | Gemini CLI |
+|---|---|---|
+| settings | `~/.claude/settings.json` | `~/.gemini/settings.json` |
+| tool events | `PostToolUse` **and** `PostToolUseFailure` | `AfterTool` only |
+| how an outcome is known | which event fired | `tool_response.error` |
+| edit tools | `Write`, `Edit`, `MultiEdit` | `write_file`, `replace` |
+| shell tool | `Bash` | `run_shell_command` |
+| hook timeout unit | seconds | **milliseconds** |
+| may a hook print? | yes | **no** — stdout is parsed as JSON |
+
+The timeout one is the quietest: reusing Claude's `5` in a Gemini config gives every hook five *milliseconds* before it is killed.
+
+**On reading tool output.** This project's rule since round 5 has been to take a command's outcome from the event name and never from parsing tool output, because Claude's `tool_response` is an undocumented shape that changes. Gemini has no failure event, so that rule cannot apply — but neither does the reason for it. Gemini's reference *specifies* `tool_response` as `{ llmContent, returnDisplay, error? }` and calls it a stable API. Reading a documented field is a different act from sniffing an undocumented one. Where the documented field is absent, no outcome is claimed at all rather than a pass being assumed.
+
+**On naming the agent.** `--agent` is written into the hook command by `init`, never inferred at run time. Both agents send `session_id`, `cwd`, `hook_event_name`, `tool_name` and `tool_input`, so the payloads are not distinguishable by shape. A guess would be right most of the time, and a receipt naming the wrong agent is worse than one naming none.
+
+## Agents not yet wired
+
+Cursor, Codex, and Google Antigravity have no adapter. Antigravity documents a hooks system (`PreToolUse`, `PostToolUse`, `Stop` in `.agents/hooks.json`), and two things need answering before an adapter is worth writing: whether `PostToolUse` carries the `toolCall` that names the file or command, or only `stepIdx` and `error`; and whether hooks fire in the IDE at all, since there are open reports that they do not.
+
+Both are five minutes of experiment for someone with it installed, and neither is answerable by reading. If you have one of these agents, that experiment is the most useful contribution this project can take right now — more than the adapter itself, which is an afternoon once the contract is known.
