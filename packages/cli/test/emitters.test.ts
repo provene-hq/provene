@@ -17,6 +17,7 @@ import { execFileSync, spawnSync } from "node:child_process";
 import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { buildT0, checkStatement } from "../src/receipt.ts";
 
 const CLI = join(import.meta.dirname, "..", "src", "cli.ts");
 
@@ -198,4 +199,90 @@ test("a command run in another repository is not evidence about this one", () =>
     // other project and must not be claimed by this receipt.
     assert.match(e.stdout, /1 of 2 changed path\(s\) attributed/, e.stdout);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+/**
+ * RFC 0001 §6.4.1 — attribution is not the changeset.
+ *
+ * Through v0.1.9 the specification said `file` granularity "asserts only that
+ * the agent touched the file" while also requiring `changes.files` to be
+ * exactly the set the change digest was computed over. Both cannot hold: the
+ * digest binds a changeset, which includes whatever the developer wrote in the
+ * same working tree. So every receipt asserted the agent had touched files it
+ * had never seen, and `check` reported a count taken from `changes.files` —
+ * always equal to the number of changed paths, by construction.
+ */
+test("a receipt distinguishes what changed from what the agent touched", () => {
+  const dir = mkdtempSync(join(tmpdir(), "provene-attrib-"));
+  try {
+    const repo = join(dir, "repo");
+    mkdirSync(repo, { recursive: true });
+    const git = (...a: string[]): void => { execFileSync("git", a, { cwd: repo, stdio: "ignore" }); };
+    git("init", "-q", ".");
+    git("config", "user.email", "t@t");
+    git("config", "user.name", "t");
+    for (const f of ["agent.ts", "human.ts"]) writeFileSync(join(repo, f), "const x = 1;\n", "utf8");
+    git("add", "-A");
+    git("commit", "-qm", "init");
+    // Both files change. Only one of them was touched by the agent; the other
+    // is the developer's own work, sitting in the same working tree.
+    for (const f of ["agent.ts", "human.ts"]) writeFileSync(join(repo, f), "const x = 2;\n", "utf8");
+
+    const env = { ...process.env, PROVENE_HOME: join(dir, "home") };
+    const r0 = spawnSync(process.execPath, [CLI, "record", "--session", "s",
+      "--kind", "edit", "--path", "agent.ts", "--cwd", repo], { cwd: repo, encoding: "utf8", env });
+    assert.equal(r0.status, 0, r0.stdout);
+
+    const e = spawnSync(process.execPath, [CLI, "emit", "--session", "s", "--tool", "t"],
+      { cwd: repo, encoding: "utf8", env });
+    assert.equal(e.status, 0, e.stdout);
+
+    const file = join(repo, ".provene", readdirSync(join(repo, ".provene"))[0]!);
+    const pred = (JSON.parse(readFileSync(file, "utf8")) as
+      { predicate: { changes: { files: Array<{ path: string; attributedTo?: string }> } } }).predicate;
+
+    // The changeset is still both files, and still binds the digest.
+    assert.deepEqual(pred.changes.files.map((f) => f.path).sort(), ["agent.ts", "human.ts"]);
+    // The attribution claim is only the one that was observed.
+    const attributed = pred.changes.files.filter((f) => f.attributedTo === "agent").map((f) => f.path);
+    assert.deepEqual(attributed, ["agent.ts"]);
+    // Absent means UNOBSERVED, not human-authored: there is no field saying so.
+    const human = pred.changes.files.find((f) => f.path === "human.ts")!;
+    assert.equal(human.attributedTo, undefined);
+    assert.equal(JSON.stringify(human).includes("human"), true);
+    assert.equal(/"attributedTo"\s*:\s*"(?!agent)/.test(JSON.stringify(pred)), false);
+
+    // And `check` counts the field rather than the changeset. It reads
+    // committed state only (RFC 0001 section 9), so the work and its receipt
+    // are committed first -- which is how a reviewer meets them anyway.
+    git("add", "-A");
+    git("commit", "-qm", "work");
+    const c = spawnSync(process.execPath, [CLI, "check", "--base", "HEAD~1"],
+      { cwd: repo, encoding: "utf8", env });
+    assert.match(c.stdout, /2 changed path\(s\); 1 carry agent attribution/, c.stdout);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+/** The two rules of §6.4.1 that a verifier enforces. */
+test("a receipt cannot attribute lines to an agent while disowning the file", () => {
+  const base = {
+    subjectName: "s@main", entries: [], parent: "0".repeat(40),
+    agent: { tool: "t" }, emitter: { name: "provene", version: "0" },
+    commands: [], runs: [], attributedPaths: [],
+  };
+  const ok = buildT0(base as never);
+  const pred = ok.predicate as Record<string, any>;
+
+  pred["changes"].granularity = "hunk";
+  pred["changes"].files = [{ path: "a.ts", status: "M", preBlob: "-", postBlob: "-",
+    attributed: [{ digest: "sha256:00", lines: 1 }] }];
+  const spansOnly = checkStatement(ok, undefined);
+  assert.ok(spansOnly.problems.some((p) => /attributed spans but is not attributedTo/.test(p)),
+    spansOnly.problems.join("; "));
+
+  pred["changes"].files = [{ path: "a.ts", status: "M", preBlob: "-", postBlob: "-",
+    attributedTo: "human" }];
+  const wrongValue = checkStatement(ok, undefined);
+  assert.ok(wrongValue.problems.some((p) => /attributedTo must be "agent"/.test(p)),
+    wrongValue.problems.join("; "));
 });

@@ -40,6 +40,7 @@ export interface BuildInput {
 /** A T0 receipt: unsigned, and therefore a bare Statement rather than a DSSE envelope. */
 export function buildT0(input: BuildInput): Statement {
   const digest = changeDigest(input.entries);
+  const attributed = new Set(input.attributedPaths);
   const changed = input.entries.filter(
     (e) => !DEFAULT_EXCLUDED_PREFIXES.some((p) => e.path.startsWith(p)),
   );
@@ -71,12 +72,23 @@ export function buildT0(input: BuildInput): Statement {
         // RFC 0001 6.4: `file` is the only granularity a v0.1 emitter must produce.
         // Unlisted paths are UNOBSERVED, never human-authored.
         granularity: "file",
+        // RFC 0001 6.4.1. `changes.files` is the CHANGESET -- everything that
+        // differs between two tree states, the developer's own edits included.
+        // `attributedTo` is the separate, weaker claim: the emitter saw this
+        // session touch this path. Absent means unobserved, never human.
+        //
+        // This was computed from the journal and then thrown away for nine
+        // revisions, while `check` reported an attribution count taken from
+        // `changes.files` -- a number equal to the changed-path count by
+        // construction, which is what a metric looks like when it measures
+        // nothing.
         files: changed.map((e) => ({
           path: e.path,
           status: e.status,
           ...(e.prePath !== undefined ? { prePath: e.prePath } : {}),
           preBlob: e.preBlob,
           postBlob: e.postBlob,
+          ...(attributed.has(e.path) ? { attributedTo: "agent" as const } : {}),
           verifiedBy: [] as string[],
         })),
       },
@@ -188,6 +200,19 @@ export function checkStatement(
   if (pred["changes"]?.granularity === "file") {
     const withSpans = (pred["changes"].files ?? []).filter((f: any) => f.attributed !== undefined);
     if (withSpans.length > 0) problems.push("granularity is 'file' but attributed spans are present");
+  }
+
+  // RFC 0001 6.4.1. Two rules, both about a receipt not being able to say two
+  // things at once: the only permitted value is "agent", and a file carrying
+  // attributed spans is by definition one the emitter observed the agent edit,
+  // so it cannot decline to attribute the file those lines are in.
+  for (const f of (pred["changes"]?.files ?? []) as Array<Record<string, unknown>>) {
+    if (f["attributedTo"] !== undefined && f["attributedTo"] !== "agent") {
+      problems.push(`${String(f["path"])}: attributedTo must be "agent", got ${JSON.stringify(f["attributedTo"])}`);
+    }
+    if (Array.isArray(f["attributed"]) && f["attributed"].length > 0 && f["attributedTo"] !== "agent") {
+      problems.push(`${String(f["path"])}: has attributed spans but is not attributedTo the agent`);
+    }
   }
 
   const claimed = s.subject?.[0]?.digest["sha256"];

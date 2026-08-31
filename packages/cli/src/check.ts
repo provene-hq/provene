@@ -105,8 +105,13 @@ export function runCheck(opts: {
   const attributed = new Set<string>();
   for (const { file, statement } of all) {
     if (!inRange.has(file)) continue;
-    const files = ((statement.predicate as Record<string, any>)["changes"]?.files ?? []) as Array<{ path: string }>;
-    for (const f of files) attributed.add(f.path);
+    const files = ((statement.predicate as Record<string, any>)["changes"]?.files ?? []) as Array<{ path: string; attributedTo?: string }>;
+    // RFC 0001 6.4.1: an agent-attributed path is one carrying `attributedTo`.
+    // Counting `changes.files` counts the whole changeset, so the figure was
+    // always equal to the number of changed paths and told a reviewer nothing.
+    // A receipt from an older emitter carries the field nowhere and is reported
+    // as attributing nothing, which is exactly what it claims.
+    for (const f of files) if (f.attributedTo === "agent") attributed.add(f.path);
   }
 
   const hasCoverage = opts.lcovPath !== undefined && existsSync(opts.lcovPath);
