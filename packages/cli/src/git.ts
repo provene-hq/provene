@@ -37,6 +37,20 @@ export function rootCommit(cwd?: string): string {
  * which is much of what agents do -- would otherwise produce a receipt that does
  * not mention it at all. Found by end-to-end testing, not by review.
  */
+const isNullOid = (oid: string): boolean => /^0+$/.test(oid);
+
+/** The blob id the working-tree content WOULD have. Does not write to the object store. */
+function hashObject(path: string, cwd?: string): string {
+  try {
+    return execFileSync("git", ["hash-object", "--", path], {
+      encoding: "utf8",
+      cwd: cwd ?? process.cwd(),
+    }).trim();
+  } catch {
+    return "-"; // the file is gone; the status letter already says what happened
+  }
+}
+
 function untrackedEntries(cwd?: string): ChangeEntry[] {
   const listed = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "-z"], {
     encoding: "utf8",
@@ -50,10 +64,7 @@ function untrackedEntries(cwd?: string): ChangeEntry[] {
       status: "A" as const,
       path,
       preBlob: "-",
-      postBlob: execFileSync("git", ["hash-object", "--", path], {
-        encoding: "utf8",
-        cwd: cwd ?? process.cwd(),
-      }).trim(),
+      postBlob: hashObject(path, cwd),
     }));
 }
 
@@ -87,13 +98,20 @@ export function diffEntries(base: string, cwd?: string): ChangeEntry[] {
     const second = isRenameOrCopy ? (fields[i + 2] ?? "") : undefined;
     i += isRenameOrCopy ? 3 : 2;
 
-    const nullOid = /^0+$/;
+    const path = second ?? first;
     out.push({
       status: letter === "R" ? "R" : letter,
-      path: second ?? first,
+      path,
       ...(letter === "R" ? { prePath: first } : {}),
-      preBlob: nullOid.test(preBlob) ? "-" : preBlob,
-      postBlob: nullOid.test(postBlob) ? "-" : postBlob,
+      preBlob: isNullOid(preBlob) ? "-" : preBlob,
+      // A working-tree modification has no blob object yet, so git reports
+      // all-zeros for the post image. Hashing the file gives the digest real
+      // content to bind to -- without this, two entirely different unstaged
+      // edits to the same path produce the SAME change digest, which is the
+      // normal case at session end and makes the binding decorative.
+      postBlob: isNullOid(postBlob)
+        ? (letter === "D" ? "-" : hashObject(path, cwd))
+        : postBlob,
     });
   }
   return [...out, ...untrackedEntries(cwd)];

@@ -39,7 +39,9 @@ function cmdEmit(args: Record<string, string | boolean>): number {
   try {
     if (hookCwd !== undefined) process.chdir(hookCwd);
     const root = repoRoot();
-    const base = String(args["base"] ?? headCommit());
+    // Resolve to a commit id. A receipt that records "HEAD" as its parent
+    // records nothing: HEAD moves, and the binding must name a fixed commit.
+    const base = git(["rev-parse", String(args["base"] ?? "HEAD")], root);
     const entries = diffEntries(base, root);
     if (entries.length === 0) { out("provene: no changes to attest"); return 0; }
 
@@ -101,8 +103,15 @@ function cmdVerify(args: Record<string, string | boolean>): number {
   const file = String(args["_0"] ?? "");
   if (file === "") { out("usage: provene verify <receipt.json> [--against <commit>]"); return 2; }
   const statement = JSON.parse(readFileSync(file, "utf8")) as Statement;
+  // Resolve the ref before comparing: binding.parent holds a commit id, so
+  // comparing it against the literal string "HEAD" reported every receipt as
+  // rebased.
   const against = args["against"] !== undefined
-    ? { entries: diffEntries(String(args["against"])), parent: String(args["against"]) }
+    ? (() => {
+        const ref = String(args["against"]);
+        const sha = git(["rev-parse", ref]);
+        return { entries: diffEntries(sha), parent: sha };
+      })()
     : undefined;
   const r = checkStatement(statement, against);
   if (r.ok) {
@@ -294,6 +303,8 @@ function parse(argv: readonly string[]): Record<string, string | boolean> {
   return o;
 }
 
+// Entry point: dispatch on the subcommand, exit with its status so hooks and CI
+// can branch on the code rather than parse the output.
 const [, , command, ...rest] = process.argv;
 const args = parse(rest);
 let code = 0;
