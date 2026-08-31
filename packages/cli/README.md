@@ -18,6 +18,8 @@ It uses `SessionEnd` rather than `Stop` because a `Stop` hook can refuse to let 
 
 After that, work normally. A receipt appears in `.provene/` in your working tree when a session ends, unstaged. Nothing commits it for you: stage and commit it with the change it describes, the same way you would a test.
 
+Two things catch people in the first hour, and both look like the tool is broken. `git commit -am` will not pick up a receipt, because `-a` stages modified tracked files and a new receipt is neither — use `git add -A`. And hooks are read when Claude Code starts, so if it was already running when you ran `provene init`, restart it.
+
 It names the agent. It records the model only if something told the CLI what it was, because no hook payload carries it and the emitter will not guess.
 
 ## Commands

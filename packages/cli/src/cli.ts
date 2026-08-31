@@ -686,8 +686,13 @@ function cmdInit(args: Record<string, string | boolean>): number {
   out("  SessionEnd writes the receipt. SessionEnd is used rather than Stop");
   out("  because a Stop hook can block and force the session to continue.");
   out("");
-  out("  Start a new Claude Code session for this to take effect, then run");
-  out("  `provene doctor` to confirm the hook actually fired.");
+  out("  If Claude Code is running now, restart it: hooks are read when it starts,");
+  out("  so a session already open will not fire them and no receipt will appear.");
+  out("  Then run `provene doctor` to confirm the hook actually fired.");
+  out("");
+  out("  Receipts are written to .provene/ UNSTAGED. `git commit -am` will not");
+  out("  pick one up, because -a stages modified tracked files and a new receipt");
+  out("  is neither. Use `git add -A` or `git add .provene/`.");
   return 0;
 }
 
@@ -710,6 +715,19 @@ function parse(argv: readonly string[]): Record<string, string | boolean> {
   return o;
 }
 
+function usage(): void {
+  out("provene — evidence receipts for AI-generated code changes\n");
+  out("  provene init [--dry-run] [--settings <path>]           install the Claude Code hooks");
+  out("  provene record --stdin | --session <id> ...            append to the session journal");
+  out("  provene emit   --session <id> [--base <commit>]        write a T0 receipt");
+  out("  provene verify <receipt> [--against <commit>]          check integrity, report tier");
+  out("  provene check  --base <ref> [--coverage <lcov.info>]   what a reviewer needs to look at");
+  out("  provene promote --base <ref> --attester <id> --out <f>  build the T2 aggregate for CI to sign");
+  out("  provene manifest --base <ref> [--out <f>]              the bytes the change digest is taken over");
+  out("  provene verify-aggregate --repo <owner/name> --base <ref>  verify the signed T2 aggregate");
+  out("  provene doctor [--settings <path>]                     check the local setup");
+}
+
 // Entry point: dispatch on the subcommand, exit with its status so hooks and CI
 // can branch on the code rather than parse the output.
 const [, , command, ...rest] = process.argv;
@@ -726,17 +744,11 @@ switch (command) {
   case "record": code = cmdRecord(args); break;
   case "init": code = cmdInit(args); break;
   case "--version": case "version": out(VERSION); break;
+  // Asking for help is not a usage error. `provene --help` exited 2, so any
+  // script or Makefile that ran it as a sanity check saw a failure.
+  case "--help": case "-h": case "help": usage(); break;
   default:
-    out("provene — evidence receipts for AI-generated code changes\n");
-    out("  provene init [--dry-run] [--settings <path>]           install the Claude Code hooks");
-    out("  provene record --stdin | --session <id> ...            append to the session journal");
-    out("  provene emit   --session <id> [--base <commit>]        write a T0 receipt");
-    out("  provene verify <receipt> [--against <commit>]          check integrity, report tier");
-    out("  provene check  --base <ref> [--coverage <lcov.info>]   what a reviewer needs to look at");
-    out("  provene promote --base <ref> --attester <id> --out <f>  build the T2 aggregate for CI to sign");
-    out("  provene manifest --base <ref> [--out <f>]              the bytes the change digest is taken over");
-    out("  provene verify-aggregate --repo <owner/name> --base <ref>  verify the signed T2 aggregate");
-    out("  provene doctor [--settings <path>]                     check the local setup");
+    usage();
     code = command === undefined ? 0 : 2;
 }
 process.exit(code);

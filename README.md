@@ -94,7 +94,12 @@ It uses `SessionEnd` rather than `Stop` because a `Stop` hook can refuse to let 
 
 One more thing worth knowing before you read a receipt: the agent's *model* is recorded only if something tells the CLI what it was. No Claude Code hook payload carries it, and the emitter will not guess, so a receipt written by the hooks alone names the tool and leaves the model out.
 
-The receipt lands in `.provene/` in your working tree, unstaged. Nothing commits it for you: stage and commit it with the change it describes, the same way you would a test. Committing it is what binds the evidence to the history, and a receipt left uncommitted is a receipt nobody will ever see.
+The receipt lands in `.provene/` in your working tree, unstaged. Nothing commits it for you: stage and commit it with the change it describes, the same way you would a test. Committing it is what binds the evidence to the history, and a receipt left uncommitted is one nobody will ever see.
+
+Two things catch people in the first hour, and both look like the tool is broken:
+
+- **`git commit -am` will not pick up a receipt.** `-a` stages modified tracked files, and a new receipt is neither. Use `git add -A` or `git add .provene/`.
+- **Hooks are read when Claude Code starts.** If it was already running when you ran `provene init`, restart it, or the session you are in now will end without writing anything.
 
 Claude Code is the only agent wired up today. The receipt format is not specific to it, and adding a second emitter is a hook script, not a fork.
 

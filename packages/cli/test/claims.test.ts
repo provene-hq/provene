@@ -195,3 +195,33 @@ test("no command leaks a subprocess's error text to stderr", () => {
     }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+test("asking for help is not a usage error", () => {
+  // `provene --help` exited 2, so a Makefile or CI step running it as a sanity
+  // check saw a failure. Reported by someone installing the published package
+  // who had no reason to know what the exit code meant.
+  for (const argv of [["--help"], ["-h"], ["help"], []]) {
+    const r = spawnSync(process.execPath, [CLI, ...argv], { encoding: "utf8" });
+    assert.equal(r.status, 0, `${argv[0] ?? "<no args>"} exited ${r.status}`);
+    assert.match(r.stdout, /evidence receipts/);
+    assert.equal(r.stderr, "");
+  }
+  // An actual mistake still is one.
+  const bad = spawnSync(process.execPath, [CLI, "nonsense"], { encoding: "utf8" });
+  assert.equal(bad.status, 2);
+});
+
+test("init warns about the two things that make it look broken", () => {
+  const dir = mkdtempSync(join(tmpdir(), "provene-init-"));
+  try {
+    const settings = join(dir, "settings.json");
+    writeFileSync(settings, "{}");
+    const r = spawnSync(process.execPath, [CLI, "init", "--settings", settings], { encoding: "utf8" });
+    assert.equal(r.status, 0, r.stdout + r.stderr);
+    // Hooks are read at startup: a session already open writes nothing, and
+    // the user concludes the tool does not work.
+    assert.match(r.stdout, /restart it/);
+    // -a stages modified tracked files; a new receipt is neither.
+    assert.match(r.stdout, /git commit -am/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
