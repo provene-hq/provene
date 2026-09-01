@@ -1,0 +1,7 @@
+# JSON Schema is fetched cross-origin by validators in browsers and by tools
+# that resolve $id. Without this, a schema published at its own canonical URL
+# cannot be used from anywhere but curl.
+/schema/*
+  Access-Control-Allow-Origin: *
+  Content-Type: application/schema+json; charset=utf-8
+  Cache-Control: public, max-age=3600

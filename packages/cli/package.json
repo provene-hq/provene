@@ -20,7 +20,8 @@
     "conformance": "node --test test/conformance.test.ts",
     "prepublishOnly": "npm run build",
     "test:coverage": "node --test --experimental-test-coverage --test-reporter=lcov --test-reporter-destination=coverage/lcov.info --test-reporter=spec --test-reporter-destination=stdout 'test/*.test.ts'",
-    "samples": "node scripts/emit-samples.ts ../../.samples"
+    "samples": "node scripts/emit-samples.ts ../../.samples",
+    "site:sync": "node -e \"const{copyFileSync}=require('node:fs');for(const[a,b]of[['../../spec/schema/provene-receipt-v0.1.schema.json','../../docs/schema/receipt/v0.1.json'],['../../spec/schema/provene-aggregate-v0.1.schema.json','../../docs/schema/aggregate/v0.1.json'],['../../spec/schema/provene-policy-v1.schema.json','../../docs/schema/policy/v1.json']])copyFileSync(a,b)\""
   },
   "devDependencies": {
     "@types/node": "^22.0.0",

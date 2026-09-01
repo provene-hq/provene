@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>provene.dev/attestation/code-change-aggregate/v0.1</title>
+<meta name="description" content="The Provene aggregate predicate: what CI signs over a range of commits, and what a signature does and does not promote.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site"><div>
+  <a class="brand" href="/">Provene</a>
+  <a href="/attestation/code-change/v0.1">Predicate</a>
+  <a href="https://github.com/provene-hq/provene">Source</a>
+  <a href="https://www.npmjs.com/package/proveneio">npm</a>
+</div></header>
+<main>
+
+<h1><code>code-change-aggregate</code> predicate, v0.1</h1>
+<p class="lede">What continuous integration signs over a range of commits, and the one rule that decides what a signature is allowed to say.</p>
+
+<pre><code>"predicateType": "https://provene.dev/attestation/code-change-aggregate/v0.1"</code></pre>
+
+<p>A local emitter writes an unsigned <a href="/attestation/code-change/v0.1"><code>code-change</code></a> receipt per session. CI then re-observes what it can, signs with its own workload identity, and emits an aggregate naming the constituent receipts by digest. That is promotion, and it is where a receipt stops being a self-attestation.</p>
+
+<h2>The rule that matters</h2>
+
+<div class="note never">
+<p>A promoted receipt <strong>must not restate a claim it did not itself observe.</strong> Claims carried forward from a lower tier retain the <code>observedBy</code> of their original observer.</p>
+</div>
+
+<p>A test run the developer's machine observed does not become independently verified by appearing inside a document CI signed. The signature says CI vouches for what CI saw — the range, the digests, the runs it executed. It says nothing more, and the tool enforces that rather than trusting emitters to be careful.</p>
+
+<p>This is also why the aggregate carries no <code>changes</code> block: CI observed the test runs, not the agent's edits, so attribution is never promoted.</p>
+
+<h2>What it carries</h2>
+
+<table>
+<tr><th>Field</th><th>Claim</th></tr>
+<tr><td><code>attestation.attester</code></td><td>The CI identity that signed. Checked against the signing certificate, not taken on the document's word.</td></tr>
+<tr><td><code>attestation.trustRoot</code></td><td><code>sigstore-github</code> — recorded as a kind rather than a specific instance, because the signer does not choose it: GitHub selects the public-good instance for public repositories and its private one otherwise.</td></tr>
+<tr><td><code>binding</code></td><td>The change digest over the whole range, computed with the same algorithm as a single receipt.</td></tr>
+<tr><td><code>constituents</code></td><td>The lower-tier receipts this aggregate covers, by digest.</td></tr>
+<tr><td><code>coverage</code></td><td><code>complete</code>, plus how many constituents were found against how many commits are in range. Emitted even when incomplete — a missing aggregate is indistinguishable from a crashed job, while <code>complete: false</code> is a signed statement of exactly how much was covered.</td></tr>
+<tr><td><code>verification.runs</code></td><td>Runs CI observed. All carry <code>observedBy: "ci"</code>.</td></tr>
+</table>
+
+<h2>Verifying one</h2>
+
+<pre><code>provene verify-aggregate --repo owner/name --base &lt;commit&gt;</code></pre>
+
+<p>Signature verification is delegated to <code>gh attestation verify</code> and its exit code is the trust boundary. The tool distinguishes four outcomes that are easy to collapse into one and must not be: verified, no attestation exists, the signature is invalid, and the verifier could not be run. Only the first exits zero, and an absent attestation is never reported as a failed signature.</p>
+
+<footer>
+<p><a href="/schema/aggregate/v0.1.json">JSON Schema</a> · <a href="https://github.com/provene-hq/provene/blob/main/spec/rfc/0001-receipt-schema.md">RFC 0001 §5, §7</a> · Apache-2.0</p>
+</footer>
+</main>
+</body>
+</html>

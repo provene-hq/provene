@@ -1,0 +1,80 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>provene.dev/attestation/code-change/v0.1</title>
+<meta name="description" content="The Provene code-change predicate: what a receipt records, what it deliberately does not claim, and how to verify one.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site"><div>
+  <a class="brand" href="/">Provene</a>
+  <a href="/attestation/code-change/v0.1">Predicate</a>
+  <a href="https://github.com/provene-hq/provene">Source</a>
+  <a href="https://www.npmjs.com/package/proveneio">npm</a>
+</div></header>
+<main>
+
+<h1><code>code-change</code> predicate, v0.1</h1>
+<p class="lede">You have probably arrived here from the <code>predicateType</code> of a receipt someone asked you to trust. This page says what that document claims, and — more importantly — what it does not.</p>
+
+<pre><code>"predicateType": "https://provene.dev/attestation/code-change/v0.1"</code></pre>
+
+<p>The receipt is an <a href="https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md">in-toto Statement v1</a>. Unsigned receipts (<code>T0</code>) are the bare Statement; signed ones are wrapped in a <a href="https://github.com/secure-systems-lab/dsse">DSSE</a> envelope. The normative document is <a href="https://github.com/provene-hq/provene/blob/main/spec/rfc/0001-receipt-schema.md">RFC 0001</a>; the machine-readable form is the <a href="/schema/receipt/v0.1.json">JSON Schema</a>.</p>
+
+<h2>Read this part first</h2>
+
+<div class="note never">
+<p>A receipt does <strong>not</strong> assert that an agent authored a change, that the code is correct, secure or well-designed, or that unattributed regions of a diff were written by a human.</p>
+<p><strong>Absence of attribution means unobserved, never human.</strong> This is normative: an implementation that presents it otherwise is non-conforming.</p>
+</div>
+
+<p>Someone can write code by hand and record it as an agent's, or the reverse. No receipt format can distinguish typing from generating, and this one does not claim to. What it does record is what an observer saw, and who that observer was.</p>
+
+<h2>What it records</h2>
+
+<table>
+<tr><th>Field</th><th>Claim</th></tr>
+<tr><td><code>attestation.tier</code></td><td>Who observed this, and therefore what it is worth. <code>T0</code>–<code>T3</code>, below.</td></tr>
+<tr><td><code>agent</code></td><td>The tool, vendor, version and model — <em>as reported by the tool itself</em>. <code>modelSource</code> says whether the runtime reported it or a config named it. An emitter that cannot tell records no model at all rather than guessing.</td></tr>
+<tr><td><code>binding</code></td><td>A SHA-256 over the git blob ids of the changed set, sorted by UTF-8 bytes, excluding <code>.provene/**</code>. This is what ties the receipt to specific content rather than to a commit message.</td></tr>
+<tr><td><code>changes.files</code></td><td>The changeset — every path that differs between two states of the tree, <em>including work the developer did themselves</em>. A verifier must be able to recompute the subject digest from this list alone.</td></tr>
+<tr><td><code>changes.files[].attributedTo</code></td><td>Optional, and a separate and weaker claim: the emitter <em>observed</em> this session touch this path. Absent means unobserved.</td></tr>
+<tr><td><code>commands</code></td><td>Command name, a <em>shape</em> if the whole command line matched a fixed allowlist, and an HMAC of the real argument vector keyed to the repository. Never the raw arguments.</td></tr>
+<tr><td><code>verification.runs</code></td><td>Test runs and their results, each carrying <code>observedBy</code>: <code>local</code> or <code>ci</code>. Only <code>ci</code> is independent.</td></tr>
+<tr><td><code>verification.unverifiedPaths</code></td><td>Changed paths no run in this receipt covers. Verification coverage over the whole changeset — this carries <em>no</em> attribution claim and must not be filtered by one.</td></tr>
+</table>
+
+<h2>Tiers, and what each is worth</h2>
+
+<table>
+<tr><th>Tier</th><th>Observed by</th><th>Worth</th></tr>
+<tr><td><code>T0</code></td><td>the developer's machine, unsigned</td><td>local visibility; satisfies no policy</td></tr>
+<tr><td><code>T1</code></td><td>the developer's machine, their identity</td><td>attribution among people who already trust each other. Specified; no emitter produces it</td></tr>
+<tr><td><code>T2</code></td><td>CI, on a runner the developer does not control</td><td>verification evidence, independently observed</td></tr>
+<tr><td><code>T3</code></td><td>the execution environment or the agent vendor</td><td>authorship. Reserved; nothing produces it yet</td></tr>
+</table>
+
+<p>If you are deciding whether to trust a receipt, this table is the decision. A <code>T0</code> receipt showing a passing test suite is a statement by the person who wants the change merged. A <code>T2</code> aggregate signed by a CI workload identity is a statement by a runner they did not control — that is the one that closes forged test evidence.</p>
+
+<h2>Privacy</h2>
+
+<p>Receipts carry a keyed digest of the task, never its text; a command's name and an HMAC of its arguments, never the raw vector; and no stdout, no environment variable values, and no file contents. The redaction contract is an <em>allowlist</em>, because argument vectors carry credentials routinely and a denylist in a trust product fails silently and permanently.</p>
+
+<p>The HMAC is keyed from the repository's root commit, which anyone with the repository can read. It makes two receipts comparable without either revealing a command to a stranger holding only the receipt. It is not encryption, and short command lines are guessable.</p>
+
+<h2>Verifying one</h2>
+
+<pre><code>npm install -g proveneio
+provene verify path/to/&lt;digest&gt;.statement.json
+provene verify-aggregate --repo owner/name --base &lt;commit&gt;   # checks the signature</code></pre>
+
+<p><code>verify</code> checks integrity and reports the tier. Signature verification is delegated to <code>gh attestation verify</code>, and its exit code is the trust boundary — not any parsing done by this tool.</p>
+
+<footer>
+<p><a href="/schema/receipt/v0.1.json">JSON Schema</a> · <a href="https://github.com/provene-hq/provene/blob/main/spec/rfc/0001-receipt-schema.md">RFC 0001</a> · <a href="https://github.com/provene-hq/provene/blob/main/spec/threat-model.md">Threat model</a> · Apache-2.0</p>
+</footer>
+</main>
+</body>
+</html>

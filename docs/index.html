@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Provene — evidence receipts for AI-generated code changes</title>
+<meta name="description" content="Portable, signed records of what an AI coding agent changed and what verification was observed to run on it. Open format, open source, no service required.">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site"><div>
+  <a class="brand" href="/">Provene</a>
+  <a href="/attestation/code-change/v0.1">Predicate</a>
+  <a href="https://github.com/provene-hq/provene">Source</a>
+  <a href="https://www.npmjs.com/package/proveneio">npm</a>
+</div></header>
+<main>
+
+<h1>Evidence receipts for AI-generated code changes</h1>
+<p class="lede">A portable record of what an agent changed, and what was actually run against it before merge. Committed with the change, verifiable by anyone, tied to no vendor.</p>
+
+<h2>The problem, in one diff</h2>
+
+<p>An agent is asked to add discount codes to a shopping cart. It writes <code>src/discount.ts</code>, adds a test for it, and edits <code>src/cart.ts</code>. Then it runs the suite. Everything is green.</p>
+
+<pre><code> 7  export function total(items: Item[], code: string): number {
+ 8    const shipping = subtotal(items) &gt; 5000 ? 0 : 499;
+ 9    return subtotal(items) + shipping;
+10  }</code></pre>
+
+<p>The discount code is never applied. The tests the agent wrote pass. The suite is green. Nothing executed those three lines — and six months from now, nobody can tell you which parts of the service an agent wrote, from what task, or what ran against them.</p>
+
+<p>GitHub can answer that for Copilot, inside GitHub. GitLab can answer it for Duo, inside GitLab. Across three vendors and a self-hosted runner, nobody can answer it at all.</p>
+
+<h2>What a receipt is</h2>
+
+<p>An <a href="https://github.com/in-toto/attestation/blob/main/spec/v1/statement.md">in-toto Statement</a> carrying a Provene predicate, bound to a set of changes by content digest and committed in-tree alongside them. It records the agent and model as reported by the tool, which files changed and which the agent was observed to touch, which commands ran and what their outcomes were, and who attested to all of it at what assurance tier.</p>
+
+<pre><code>$ provene check --base origin/main --coverage lcov.info
+1/1 receipt(s) well formed (T0)
+3 changed path(s); 3 carry agent attribution from this change
+4/9 executable changed lines executed by the test run
+  src/cart.ts: 3 of 3 executable changed lines unverified
+  src/discount.ts: 2 of 4 executable changed lines unverified</code></pre>
+
+<p>Those last lines are the product. Not "an AI wrote this" — <em>these specific changed lines had nothing run against them.</em></p>
+
+<h2>What it does not prove</h2>
+
+<div class="note never">
+<p>A receipt does <strong>not</strong> assert that an agent authored a change, that code is correct, secure or well-designed, or that unattributed regions of a diff were written by a human. <strong>Absence of attribution means unobserved, never human.</strong></p>
+</div>
+
+<p>Forged authorship is an explicit non-goal: no format can distinguish typing from generating. What CI counter-signing does close is forged <em>test evidence</em> — a claim that a suite passed when it did not. The <a href="https://github.com/provene-hq/provene/blob/main/spec/threat-model.md">threat model</a> names what is and is not defended, including the parts that aren't.</p>
+
+<h2>Assurance tiers</h2>
+
+<table>
+<tr><th>Tier</th><th>Observed by</th><th>Worth</th></tr>
+<tr><td><code>T0</code></td><td>your machine, unsigned</td><td>local visibility; satisfies no policy</td></tr>
+<tr><td><code>T1</code></td><td>your machine, your identity</td><td>attribution among people who already trust each other. Specified; no emitter produces it</td></tr>
+<tr><td><code>T2</code></td><td>CI, on a runner you do not control</td><td>verification evidence, independently observed</td></tr>
+<tr><td><code>T3</code></td><td>the execution environment or the agent vendor</td><td>authorship. Reserved; nothing produces it yet</td></tr>
+</table>
+
+<p>A locally observed test run satisfies no policy on its own. It is a self-attestation by the party who wants the change merged, and the tool says so in its own output rather than leaving you to work it out.</p>
+
+<h2>Try it</h2>
+
+<pre><code>npm install -g proveneio
+provene init                    # Claude Code
+provene init --agent gemini     # Gemini CLI
+provene doctor</code></pre>
+
+<p>Every other agent integrates through two commands and no fork — see the <a href="https://github.com/provene-hq/provene/blob/main/spec/emitters.md">emitter contract</a>, which also records what has been verified by running each agent and what is only documented.</p>
+
+<h2>Specification</h2>
+
+<ul>
+<li><a href="/attestation/code-change/v0.1">The <code>code-change</code> predicate</a> — what a receipt claims, field by field</li>
+<li><a href="/attestation/code-change-aggregate/v0.1">The <code>code-change-aggregate</code> predicate</a> — what CI signs</li>
+<li><a href="/schema/receipt/v0.1.json">Receipt JSON Schema</a> · <a href="/schema/aggregate/v0.1.json">Aggregate</a> · <a href="/schema/policy/v1.json">Policy</a></li>
+<li><a href="https://github.com/provene-hq/provene/blob/main/spec/rfc/0001-receipt-schema.md">RFC 0001</a> — the normative document</li>
+</ul>
+
+<footer>
+<p>Apache-2.0. The schemas served here are the same bytes as <code>spec/schema/</code> in the repository, checked by a test on every run.</p>
+</footer>
+</main>
+</body>
+</html>
