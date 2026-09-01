@@ -12,7 +12,10 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { normalizePath, isWithin } from "../src/paths.ts";
+import { mkdtempSync, mkdirSync, symlinkSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { normalizePath, realPath, isWithin } from "../src/paths.ts";
 import { withinRepo, antigravityEntries } from "../src/antigravity.ts";
 
 test("a path cannot escape the repository and still be counted as inside it", () => {
@@ -92,4 +95,49 @@ test("a UNC path keeps its host and share", () => {
   // The share root is a root: `..` may not climb out of it into another share.
   assert.equal(normalizePath("//server/share/../../elsewhere/a.ts"), "//server/share/elsewhere/a.ts");
   assert.equal(isWithin("//server/share/../../other/x", "//server/share/repo", false), false);
+});
+
+/**
+ * Two spellings of one directory.
+ *
+ * This is the bug CI found on two platforms at once while every local run was
+ * green. macOS `os.tmpdir()` says `/var/folders/…` and
+ * `git rev-parse --show-toplevel` says `/private/var/folders/…`; Windows hands
+ * out `C:\Users\RUNNER~1` where git returns the long name. A lexical prefix
+ * test calls that "somewhere else", so every command recorded with one spelling
+ * is dropped as out-of-scope and the receipt ends up with no verification
+ * evidence — silently, in the safe-looking direction.
+ *
+ * Reproduced here with a symlink, which is the same shape as the macOS `/var`
+ * case and is testable on any platform that will make one.
+ */
+test("a symlinked path and its target are the same repository", () => {
+  const dir = mkdtempSync(join(tmpdir(), "provene-real-"));
+  try {
+    const target = join(dir, "target");
+    const link = join(dir, "link");
+    mkdirSync(join(target, "src"), { recursive: true });
+    try {
+      symlinkSync(target, link, "junction");
+    } catch {
+      return; // No permission to create one (ordinary on Windows). Nothing to test.
+    }
+
+    // Lexically these share no prefix at all.
+    assert.notEqual(normalizePath(link), normalizePath(target));
+
+    // The filesystem disagrees, and the filesystem is right.
+    assert.equal(realPath(link), realPath(target));
+    assert.equal(isWithin(join(link, "src"), target, false), true,
+      "a command recorded through the symlink was ruled out of the repository");
+    assert.equal(isWithin(join(target, "src"), link, false), true);
+
+    // A path that does not exist still resolves through its nearest real
+    // ancestor: a file the agent deleted must not become unattributable.
+    assert.equal(isWithin(join(link, "src", "gone.ts"), target, false), true);
+    assert.equal(isWithin(join(link, "src", "deep", "gone.ts"), target, false), true);
+
+    // And a genuine outsider is still outside.
+    assert.equal(isWithin(join(dir, "elsewhere", "a.ts"), target, false), false);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });

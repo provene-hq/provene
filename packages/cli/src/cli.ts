@@ -14,7 +14,7 @@ import { writeManifest, ghVerify, checkAggregate, decideVerification } from "./a
 import { readStdin, parsePayload, sessionIdOf } from "./hookinput.ts";
 import { resolveAgent, agentNames, hookAgents, type AgentAdapter } from "./agents.ts";
 import { readTranscript, antigravityEntries } from "./antigravity.ts";
-import { normalizePath, isWithin } from "./paths.ts";
+import { normalizePath, realPath, isWithin } from "./paths.ts";
 import {
   userSettingsPath, readSettings, withProveneHooks, writeSettings,
   proveneHooksInstalled, hookCommand,
@@ -72,8 +72,11 @@ function absoluteish(cwd: string | undefined, path: string): string {
  */
 function repoRelative(root: string, path: string): string | undefined {
   const ci = process.platform === "win32";
-  const a = normalizePath(path);
-  const b = normalizePath(root);
+  // Resolved, not normalised. `/var` and `/private/var` are the same directory
+  // on macOS and a prefix test disagrees; so do a Windows 8.3 name and its long
+  // form. See realPath -- getting this wrong silently drops every command.
+  const a = realPath(path);
+  const b = realPath(root);
   if (!isWithin(a, b, ci)) {
     // Somewhere else entirely, or still relative because no directory was
     // recorded. A rooted path outside this repository is not part of the

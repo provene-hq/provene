@@ -14,6 +14,44 @@
  * the segments have to be resolved.
  */
 
+import { realpathSync } from "node:fs";
+
+/**
+ * The path as the FILESYSTEM sees it, not as someone spelled it.
+ *
+ * Lexical comparison is not enough, and CI proved it on two platforms at once.
+ * macOS reports `/var/folders/...` from `os.tmpdir()` and
+ * `/private/var/folders/...` from `git rev-parse --show-toplevel`; Windows
+ * hands out `C:\\Users\\RUNNER~1` where git returns the long name. Same
+ * directory, different spelling, and a prefix test says "somewhere else".
+ *
+ * What that costs is not cosmetic: a command recorded with one spelling and a
+ * repository resolved to the other is dropped as out-of-scope, so on a macOS
+ * checkout under a symlinked path -- `/tmp`, or a symlinked home, both
+ * ordinary -- every command silently loses its outcome and the receipt carries
+ * no verification evidence at all. The fail-closed rule firing in the wrong
+ * direction.
+ *
+ * A path that is not on disk cannot be resolved, so the deepest ancestor that
+ * IS gets resolved and the remainder is re-attached. That covers a file the
+ * agent deleted, and a directory removed between the session and the emit.
+ */
+export function realPath(p: string): string {
+  const norm = normalizePath(p);
+  try {
+    return normalizePath(realpathSync.native(norm));
+  } catch { /* not on disk; resolve what is */ }
+  const parts = norm.split("/");
+  for (let cut = parts.length - 1; cut > 0; cut--) {
+    const head = parts.slice(0, cut).join("/");
+    if (head === "") break;
+    try {
+      return `${normalizePath(realpathSync.native(head))}/${parts.slice(cut).join("/")}`;
+    } catch { /* keep walking up */ }
+  }
+  return norm;
+}
+
 /** Separators unified, `.` dropped, `..` resolved, trailing separator removed. */
 export function normalizePath(p: string): string {
   const unified = p.replace(/\\/g, "/");
@@ -51,10 +89,15 @@ export function normalizePath(p: string): string {
   return joined === "" ? r.replace(/\/$/, "") : `${r}${joined}`;
 }
 
-/** Whether `path` is `root` or lies beneath it, after both are normalized. */
+/**
+ * Whether `path` is `root` or lies beneath it, after both are resolved.
+ *
+ * Resolved, not merely normalised: see realPath. Two spellings of one directory
+ * must answer the same question, or evidence vanishes.
+ */
 export function isWithin(path: string, root: string, caseInsensitive: boolean): boolean {
-  let a = normalizePath(path);
-  let b = normalizePath(root);
+  let a = realPath(path);
+  let b = realPath(root);
   if (caseInsensitive) { a = a.toLowerCase(); b = b.toLowerCase(); }
   return a === b || a.startsWith(b.endsWith("/") ? b : `${b}/`);
 }
