@@ -68,3 +68,25 @@ test("every provene.dev URL the repository publishes has a page behind it", () =
     assert.ok(existsSync(page) || existsSync(file), `${url} is emitted but nothing is served at it`);
   }
 });
+
+/**
+ * The apex is the identifier; `www` is a convenience.
+ *
+ * Receipts name `https://provene.dev/attestation/...`. If both hostnames serve
+ * the same pages with nothing saying which is authoritative, the URL that ends
+ * up indexed, linked and quoted may not be the one baked into every artifact
+ * this project has published. A canonical link costs one line and settles it.
+ */
+test("each page declares the apex URL as canonical", () => {
+  for (const [page, url] of [
+    ["docs/index.html", "https://provene.dev/"],
+    ["docs/attestation/code-change/v0.1/index.html", "https://provene.dev/attestation/code-change/v0.1"],
+    ["docs/attestation/code-change-aggregate/v0.1/index.html",
+     "https://provene.dev/attestation/code-change-aggregate/v0.1"],
+  ] as const) {
+    const html = readFileSync(join(root, page), "utf8");
+    assert.match(html, new RegExp(`<link rel="canonical" href="${url.replace(/[/.]/g, "\\$&")}">`),
+      `${page} does not name ${url} as canonical`);
+    assert.doesNotMatch(html, /https:\/\/www\.provene\.dev/, `${page} links to www rather than the apex`);
+  }
+});
