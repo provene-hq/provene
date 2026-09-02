@@ -39,11 +39,9 @@
         }
       },
       "agent": {
-        "vendor": "anthropic",
-        "tool": "claude-code",
-        "toolVersion": "2.4.1",
-        "model": "claude-opus-5",
-        "modelSource": "reported"
+        "vendor": "google",
+        "tool": "gemini-cli",
+        "toolVersion": "0.57.0"
       },
       "emitter": {
         "name": "provene",
@@ -51,7 +49,7 @@
       },
       "task": {
         "ref": "https://github.com/acme/api/issues/412",
-        "sessionRef": "claude-code://session/01J8YQ2K7WZC4M",
+        "sessionRef": "gemini-cli://session/01J8YQ2K7WZC4M",
         "digest": "hmac-sha256:4a91e0c7b3d2f81a6094cc5e7fb3120d84a7e69f5c0db3128e4a7f61d0c9b352",
         "digestScope": "repo",
         "keySource": "root-commit"
