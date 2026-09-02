@@ -149,3 +149,29 @@ test("every root-relative link resolves to a served file", () => {
     }
   }
 });
+
+/**
+ * Every page declares an icon, and it is the same one.
+ *
+ * Browsers request `/favicon.ico` on their own; with no icon declared that is
+ * a 404 on every visit, and a page arriving from a link aggregator is judged
+ * in the tab strip before it is read. The declaration is what stops the
+ * guess -- the link-resolution test above then proves the file is served.
+ */
+test("every page declares the site icon", () => {
+  const docs = join(root, "docs");
+  const htmlFiles: string[] = [];
+  const walk = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.name.endsWith(".html")) htmlFiles.push(full);
+    }
+  };
+  walk(docs);
+  for (const file of htmlFiles) {
+    assert.match(readFileSync(file, "utf8"),
+      /<link rel="icon" href="\/favicon\.svg" type="image\/svg\+xml">/,
+      `${file.slice(root.length + 1)} declares no icon`);
+  }
+});

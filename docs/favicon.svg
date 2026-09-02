@@ -1,0 +1,6 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" role="img" aria-label="Provene">
+  <rect width="32" height="32" rx="7" fill="#8a4b2a"/>
+  <path fill="#fbfaf8" fill-rule="evenodd"
+        d="M10 8h7a5.25 5.25 0 0 1 0 10.5h-2.5V25H10Z
+           M14.5 10.5a2.75 2.75 0 0 1 0 5.5z"/>
+</svg>
