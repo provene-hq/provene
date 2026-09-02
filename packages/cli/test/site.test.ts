@@ -14,7 +14,7 @@
  */
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { readFileSync, existsSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 
 const root = join(import.meta.dirname, "..", "..", "..");
@@ -51,6 +51,8 @@ test("every provene.dev URL the repository publishes has a page behind it", () =
   // failure mode is silent: nothing in the toolchain fetches these, only people.
   const pages = [
     "docs/index.html",
+    "docs/writing/index.html",
+    "docs/writing/three-agents-one-hooks-system/index.html",
     "docs/attestation/code-change/v0.1/index.html",
     "docs/attestation/code-change-aggregate/v0.1/index.html",
   ];
@@ -83,6 +85,9 @@ test("each page declares the apex URL as canonical", () => {
     ["docs/attestation/code-change/v0.1/index.html", "https://provene.dev/attestation/code-change/v0.1"],
     ["docs/attestation/code-change-aggregate/v0.1/index.html",
      "https://provene.dev/attestation/code-change-aggregate/v0.1"],
+    ["docs/writing/index.html", "https://provene.dev/writing/"],
+    ["docs/writing/three-agents-one-hooks-system/index.html",
+     "https://provene.dev/writing/three-agents-one-hooks-system"],
   ] as const) {
     const html = readFileSync(join(root, page), "utf8");
     assert.match(html, new RegExp(`<link rel="canonical" href="${url.replace(/[/.]/g, "\\$&")}">`),
@@ -107,4 +112,40 @@ test("the site that deploys is the site that is tested", () => {
   // A `main` would mean a Worker script decides what gets served, and these
   // tests would no longer describe the site.
   assert.equal(config.main, undefined, "wrangler.jsonc gained a Worker script");
+});
+
+/**
+ * Internal links resolve to something the Worker will actually serve.
+ *
+ * Cloudflare's static assets return 404 for a path with no file behind it, and
+ * nothing in CI visits the site, so a mistyped `href` is invisible until a
+ * reader hits it. The nav is repeated on every page, which means one typo is a
+ * broken link site-wide rather than on one page.
+ */
+test("every root-relative link resolves to a served file", () => {
+  const docs = join(root, "docs");
+  const htmlFiles: string[] = [];
+  const walk = (dir: string): void => {
+    for (const e of readdirSync(dir, { withFileTypes: true })) {
+      const full = join(dir, e.name);
+      if (e.isDirectory()) walk(full);
+      else if (e.name.endsWith(".html")) htmlFiles.push(full);
+    }
+  };
+  walk(docs);
+  assert.ok(htmlFiles.length > 0, "no pages found under docs/");
+
+  for (const file of htmlFiles) {
+    const html = readFileSync(file, "utf8");
+    for (const m of html.matchAll(/(?:href|src)="(\/[^"#?]*)/g)) {
+      const target = m[1]!;
+      // `auto-trailing-slash` serves `<dir>/index.html` for a bare directory.
+      const candidates = [
+        join(docs, target),
+        join(docs, target, "index.html"),
+      ];
+      assert.ok(candidates.some(existsSync),
+        `${file.slice(root.length + 1)} links to ${target}, which nothing serves`);
+    }
+  }
 });

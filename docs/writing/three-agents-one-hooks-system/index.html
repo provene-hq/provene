@@ -1,0 +1,101 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Three coding agents document a hooks system. One of them works.</title>
+<meta name="description" content="Antigravity, Gemini CLI and Codex CLI each publish hooks documentation. All three were wrong, and two were wrong in a way that silently produces no evidence at all. The experiments, with versions and commands.">
+<link rel="canonical" href="https://provene.dev/writing/three-agents-one-hooks-system">
+<link rel="stylesheet" href="/style.css">
+</head>
+<body>
+<header class="site"><div>
+  <a class="brand" href="/">Provene</a>
+  <a href="/writing/">Writing</a>
+  <a href="/attestation/code-change/v0.1">Predicate</a>
+  <a href="https://github.com/provene-hq/provene">Source</a>
+  <a href="https://www.npmjs.com/package/proveneio">npm</a>
+</div></header>
+<main>
+
+<h1>Three coding agents document a hooks system. One of them works.</h1>
+<p class="lede">All three publish documentation for one. In all three cases the documentation was wrong, and in two of them it was wrong in a way that would have silently produced no evidence at all.</p>
+
+<p>I spent a week building <a href="/">Provene</a>, a tool that writes signed evidence receipts for AI-generated code changes &mdash; what an agent changed, what was run against it, and who observed that. To do it I had to integrate with three coding agents&rsquo; lifecycle hooks.</p>
+
+<p>That is the interesting result, so here it is, with the commands.</p>
+
+<p class="note">Versions, all from runs on one machine: Antigravity 2.11.0.0, Gemini CLI 0.57.0, Codex CLI 0.147.0-alpha.6.5. Every claim below is dated and falsifiable against those.</p>
+
+<h2>Antigravity: documents hooks that never fire</h2>
+
+<p>Google&rsquo;s Antigravity ships a documented <code>hooks.json</code> with <code>PreToolUse</code>, <code>PostToolUse</code> and <code>Stop</code>. I wrote a probe &mdash; a script that appends whatever arrives on stdin to a log and exits silently &mdash; registered it on all three events in both plausible schema shapes, and ran ordinary sessions.</p>
+
+<p>The log was never created. Not empty: absent. Across multiple sessions, including fresh conversations rather than resumed ones, with a global search of the filesystem afterwards to rule out it landing somewhere unexpected.</p>
+
+<p>Four more experiments, all negative. There is no CLI &mdash; <code>agy</code>, <code>antigravity</code> and <code>antigravity-cli</code> are all absent from PATH, and the installation directory contains five executables, none of them a command-line entry point. <code>mcp_config.json</code> is zero bytes. The plugins are content packs, not lifecycle hooks.</p>
+
+<p>There is <a href="https://discuss.ai.google.dev/t/stop-and-posttooluse-hooks-in-agents-hooks-json-never-fire-antigravity-ide-1-107-0-windows/178288">an open thread on Google&rsquo;s own forum</a> reporting the same thing on 1.107.0, where the response was &ldquo;try 2.5.5&rdquo;. I was on a version three releases past that.</p>
+
+<p>What Antigravity <em>does</em> do is edit real files in your repository. So the change is there to attest and nothing announces it. The only remaining source is a transcript the agent writes for its own replay &mdash; which contains the developer&rsquo;s prompts in plaintext, the model&rsquo;s reasoning, and the full text of every file written. Reading that safely is an allowlist of four fields and nothing else.</p>
+
+<h2>Gemini CLI: hooks fire, and the reference omits the field that matters</h2>
+
+<p>Gemini CLI&rsquo;s hooks work. <code>SessionEnd</code> fires even when the CLI aborts with a critical error, which I only know because I watched it happen.</p>
+
+<p>But its published hooks reference does not mention <code>is_background</code> on <code>run_shell_command</code>. The source does: <code>ShellToolParams</code> in <code>packages/core/src/tools/shell.ts</code> declares <code>command</code>, <code>description</code>, <code>dir_path</code>, <code>is_background</code> and <code>delay_ms</code>, and the tool returns early with a PID when the flag is set.</p>
+
+<p>That field is the only thing separating a command nobody waited for from a verification run asserting it passed. An emitter written strictly from the published reference records backgrounded test suites as passing tests.</p>
+
+<p>Read the reference to learn the contract. Read the source before trusting that a field does not exist.</p>
+
+<h2>Codex CLI: hooks that are off by default and fail silently when off</h2>
+
+<p>OpenAI&rsquo;s Codex has a real hook system, with a payload almost identical to Claude Code&rsquo;s. Getting to that took five rounds of experiment, and four of them were spent discovering that the shape everyone had written down was wrong.</p>
+
+<p>Two things conspire:</p>
+
+<p><strong>Hooks are behind a feature flag.</strong> <code>[features] hooks = true</code> in <code>~/.codex/config.toml</code> &mdash; formerly <code>codex_hooks</code>, which still parses and emits a deprecation warning naming the new one. With the flag unset, a perfectly valid hooks file produces no error, no log line, and no hooks.</p>
+
+<p><strong>A misplaced key parses clean and registers nothing.</strong> The config wants event names as keys, each mapping to groups that carry their own <code>hooks</code> array. Put the <code>command</code> one level up &mdash; which is what every secondary source suggests &mdash; and it deserializes without complaint into a group with an empty hook list.</p>
+
+<p>Those two together mean &ldquo;I configured it and nothing happened&rdquo; has at least three causes that look identical. Two separate rounds of experiment concluded &ldquo;Codex hooks do not fire&rdquo; from a configuration that declared none.</p>
+
+<p>What broke the deadlock was a positive control: point a hook at a binary that cannot possibly exist. If the agent reports a hook execution failure, hooks fire and the question becomes why your script didn&rsquo;t run. If it says nothing, the hook was never reached. Without that, a negative result is unfalsifiable.</p>
+
+<p>Then the genuinely interesting part. Codex has no failure event, and the embedded JSON Schema for its post-tool payload declares no <code>exit_code</code>, <code>status</code>, <code>success</code> or <code>error</code> field. That reads like a dead end for anything wanting to record whether a test passed.</p>
+
+<p>It isn&rsquo;t. <code>PostToolUse</code> fires when a tool <strong>succeeded</strong> and does not fire otherwise &mdash; verified three ways: a script that printed normally and exited 1 did not fire it, the same script exiting 0 did, and a tool blocked by a <code>PreToolUse</code> hook did not. So the occurrence of the event <em>is</em> the outcome.</p>
+
+<p>Note what that test required. <code>exit 7</code> does not distinguish &ldquo;succeeded&rdquo; from &ldquo;ran&rdquo;, because it aborts the shell. A script that runs to completion and returns non-zero does. Had I stopped at <code>exit 7</code>, I would have concluded <code>PostToolUse</code> means &ldquo;ran&rdquo; &mdash; and shipped an adapter that silently records every failing test suite as a pass.</p>
+
+<h2>The part where I was wrong too</h2>
+
+<p>None of this is a story about vendors being careless and me being careful.</p>
+
+<p>I shipped four consecutive releases of my own tool with a path-comparison bug that dropped <em>all</em> command evidence on macOS. <code>os.tmpdir()</code> reports <code>/var/folders/&hellip;</code>; <code>git rev-parse --show-toplevel</code> reports <code>/private/var/folders/&hellip;</code>. Same directory, two spellings, and my comparison was lexical &mdash; so on any checkout under a symlinked path, every command lost its outcome and the receipt carried no verification evidence at all. Silently, in the direction that looks safe.</p>
+
+<p>My tests passed the whole time. They ran on Linux, where <code>/tmp</code> is <code>/tmp</code>. The CI matrix went red at the offending commit and stayed red for four releases while I kept reporting green from my own machine.</p>
+
+<p>I found it because CI told me, eventually, and I finally looked.</p>
+
+<h2>What I actually take from this</h2>
+
+<p>Provene&rsquo;s entire proposition is that a receipt asserts only what was observed, and that the absence of a claim is never evidence of its opposite. It turns out that is also the only workable methodology for integrating with these agents:</p>
+
+<ul>
+<li><strong>A silent parse means nothing.</strong> Configuration that loads without error is not configuration that works. Build a positive control before you trust a negative result.</li>
+<li><strong>Absence of an event is not absence of a fact.</strong> It can mean &ldquo;did not happen&rdquo;, &ldquo;not wired up&rdquo;, &ldquo;we weren&rsquo;t listening&rdquo;, or &ldquo;the format changed&rdquo;. Collapsing those into one is how a tool reports zero and means unmeasured.</li>
+<li><strong>The source is the contract; the documentation is a hint.</strong> Three for three.</li>
+</ul>
+
+<p>So <a href="https://github.com/provene-hq/provene/blob/main/spec/emitters.md">the emitter spec</a> now separates, per agent, what was verified by running it from what was only read. Gemini&rsquo;s <code>AfterTool</code> payload is still in the second column &mdash; hooks fire and the session-end path is confirmed, but an API quota stopped me before any tool executed, and I would rather say that than imply otherwise.</p>
+
+<p>If you use Cursor, or any agent I haven&rsquo;t touched: the experiments are worth more than the adapter. Which lifecycle events exist, whether they fire, what the payload names its fields, and whether a command&rsquo;s outcome is recoverable without parsing output. None of it is answerable by reading. All of it is an afternoon with the tool installed.</p>
+
+<footer>
+<p><a href="/">provene.dev</a> &middot; <a href="https://github.com/provene-hq/provene">github.com/provene-hq/provene</a> &middot; Apache-2.0</p>
+</footer>
+</main>
+</body>
+</html>
