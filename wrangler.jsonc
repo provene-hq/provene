@@ -1,0 +1,16 @@
+{
+  // Static assets only: no Worker script, so no `main`. Cloudflare serves
+  // `docs/` directly, and `_headers` there sets CORS on the JSON Schemas --
+  // without which a schema published at its own canonical $id is fetchable
+  // from curl and nowhere else.
+  //
+  // `html_handling` defaults to `auto-trailing-slash`, so
+  // /attestation/code-change/v0.1 serves that directory's index.html. That
+  // path is the predicateType of every receipt this project emits, so it is
+  // the one URL here that must not 404.
+  "name": "provene",
+  "compatibility_date": "2026-09-01",
+  "assets": {
+    "directory": "./docs"
+  }
+}

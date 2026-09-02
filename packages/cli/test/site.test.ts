@@ -90,3 +90,21 @@ test("each page declares the apex URL as canonical", () => {
     assert.doesNotMatch(html, /https:\/\/www\.provene\.dev/, `${page} links to www rather than the apex`);
   }
 });
+
+/**
+ * The deploy config points at the directory these tests check.
+ *
+ * Everything above verifies `docs/`. If the Worker serves something else,
+ * all of it is checking a directory nobody visits — the tests would stay green
+ * while the published schemas drifted, which is the failure they exist to
+ * prevent.
+ */
+test("the site that deploys is the site that is tested", () => {
+  const raw = readFileSync(join(root, "wrangler.jsonc"), "utf8");
+  const config = JSON.parse(raw.replace(/^\s*\/\/.*$/gm, "")) as
+    { main?: string; assets?: { directory?: string } };
+  assert.equal(config.assets?.directory, "./docs");
+  // A `main` would mean a Worker script decides what gets served, and these
+  // tests would no longer describe the site.
+  assert.equal(config.main, undefined, "wrangler.jsonc gained a Worker script");
+});
