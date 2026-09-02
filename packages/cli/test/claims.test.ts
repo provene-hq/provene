@@ -9,7 +9,7 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import { execFileSync, spawnSync } from "node:child_process";
-import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync } from "node:fs";
+import { mkdtempSync, writeFileSync, mkdirSync, rmSync, readFileSync, readdirSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { isDsseEnvelope, buildT0 } from "../src/receipt.ts";
@@ -298,4 +298,40 @@ test("the test suite leaves the repository it runs in unchanged", () => {
   const dirty = execFileSync("git", ["status", "--porcelain", "--", "m", "packages/cli/o.json", "packages/cli/m"],
     { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   assert.equal(dirty, "", `test run left files behind:\n${dirty}`);
+});
+
+/**
+ * The other half of the guard above: the suite must not write to the
+ * developer's real journal either.
+ *
+ * The test above watches the repository. Nothing watched `~/.provene`, and the
+ * one time that mattered, `emit --session s` and `record --session s` ran
+ * against the real home and left an `s.jsonl` sitting among genuine sessions —
+ * a journal of unredacted commands, in a directory whose whole purpose is to
+ * hold real ones. It was found by a human reading a directory listing months
+ * later, which is not a detection mechanism.
+ *
+ * This is a source check, not a runtime one, and it is worth being explicit
+ * about what that buys. `node --test` runs each file in its own process, so
+ * there is no point at which one test can observe what the whole suite did to
+ * a directory outside the repository. What CAN be checked is the thing that
+ * actually goes wrong: someone adds a spawn of the CLI and forgets the
+ * override. So the assertion is per-file and coarse — a file that starts the
+ * CLI must set PROVENE_HOME somewhere. It cannot prove every individual call
+ * passes it; it does mean the omission has to survive a deliberate edit rather
+ * than an oversight.
+ */
+test("no test file starts the CLI without redirecting PROVENE_HOME", () => {
+  const dir = import.meta.dirname;
+  const offenders: string[] = [];
+  for (const name of readdirSync(dir)) {
+    if (!name.endsWith(".test.ts")) continue;
+    const src = readFileSync(join(dir, name), "utf8");
+    // A spawn of this Node binary is how every one of these tests runs the CLI.
+    if (!src.includes("process.execPath")) continue;
+    if (!src.includes("PROVENE_HOME")) offenders.push(name);
+  }
+  assert.deepEqual(offenders, [],
+    `${offenders.join(", ")} spawn the CLI without overriding PROVENE_HOME, ` +
+    `so a session there would be written to the developer's real journal`);
 });
