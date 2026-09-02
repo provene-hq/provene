@@ -43,10 +43,24 @@ export function realPath(p: string): string {
   } catch { /* not on disk; resolve what is */ }
   const parts = norm.split("/");
   for (let cut = parts.length - 1; cut > 0; cut--) {
-    const head = parts.slice(0, cut).join("/");
+    let head = parts.slice(0, cut).join("/");
     if (head === "") break;
+    // `E:` is not `E:/`. Splitting a rooted Windows path on `/` leaves the
+    // drive behind as a bare `E:`, and asking the OS to resolve THAT resolves
+    // the working directory on drive E -- which, when the tool is run from
+    // inside the repository, is the repository. The remainder is then
+    // re-attached under it, and `E:\\other-project\\a.ts` comes back as
+    // `E:/provene/other-project/a.ts`: a file from a different checkout,
+    // reported as belonging to this change, in a receipt whose entire claim is
+    // that it does not do that.
+    //
+    // Nothing catches this unless the drive exists AND the process is running
+    // on it, so it is invisible on a CI runner using a different letter and
+    // shows up only on a real developer's machine.
+    if (/^[A-Za-z]:$/.test(head)) head = `${head}/`;
     try {
-      return `${normalizePath(realpathSync.native(head))}/${parts.slice(cut).join("/")}`;
+      const resolved = normalizePath(realpathSync.native(head));
+      return `${resolved.endsWith("/") ? resolved.slice(0, -1) : resolved}/${parts.slice(cut).join("/")}`;
     } catch { /* keep walking up */ }
   }
   return norm;

@@ -94,6 +94,18 @@ jobs:
           node packages/cli/scripts/emit-samples.ts "$RUNNER_TEMP/samples"
           python3 spec/conformance/runner/validate_receipts.py "$RUNNER_TEMP/samples" spec/examples
 
+      # The build output in docs/ is committed, which is what lets Cloudflare
+      # serve the site with no build step of its own. That only holds while the
+      # committed bytes are the ones the source produces -- otherwise the
+      # repository shows one homepage and the world sees another, and nothing
+      # says which is real. Rebuild and diff.
+      - name: The committed site is the site the source builds
+        run: |
+          npm --prefix site ci
+          npm --prefix site run build
+          git diff --exit-code -- docs/ \
+            || { echo "::error::docs/ differs from a fresh build of site/ -- run 'npm --prefix site run build' and commit the result"; exit 1; }
+
       - name: Provene
         # `!cancelled()` rather than a plain event check: if the test step
         # failed, the job stops before this step, and the only receipts this

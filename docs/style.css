@@ -1,20 +1,23 @@
-/* One stylesheet, no dependencies, no fonts fetched. A page that explains a
-   provenance identifier should not be loading assets from four other hosts. */
+/* The stylesheet for the pages the React build does not touch: the predicate
+   pages, the schemas' neighbours, and the writing. It shares the homepage's
+   palette so the site reads as one thing, and pulls the same two faces from
+   Google Fonts -- the only third-party host any page here contacts. */
+@import url("https://fonts.googleapis.com/css2?family=Archivo:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap");
 :root {
-  --bg: #fbfaf8; --fg: #1a1a19; --muted: #5c5b57; --rule: #e2e0db;
-  --code-bg: #f2f0ec; --accent: #8a4b2a; --ok: #2f6f4f; --warn: #8a6d1f;
+  --bg: #ffffff; --fg: #0a1b2a; --muted: #56626f; --rule: #dbe2e8;
+  --code-bg: #f4f7f9; --accent: #0a6c85; --ok: #2f6f4f; --warn: #8a6d1f;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #14141a; --fg: #e8e6e1; --muted: #a3a09a; --rule: #2c2c34;
-    --code-bg: #1d1d24; --accent: #d59a72; --ok: #7fbf9b; --warn: #d9bb63;
+    --bg: #0a1b2a; --fg: #e8eef3; --muted: #9fb0c0; --rule: #1e3547;
+    --code-bg: #0f2637; --accent: #0adbfb; --ok: #7fbf9b; --warn: #d9bb63;
   }
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body {
   margin: 0; background: var(--bg); color: var(--fg);
-  font: 16px/1.65 ui-serif, Georgia, "Times New Roman", serif;
+  font: 16px/1.65 "IBM Plex Sans", system-ui, sans-serif;
 }
 main { max-width: 46rem; margin: 0 auto; padding: 3.5rem 1.25rem 6rem; }
 header.site { border-bottom: 1px solid var(--rule); }
@@ -22,13 +25,16 @@ header.site div { max-width: 46rem; margin: 0 auto; padding: 1rem 1.25rem;
   display: flex; gap: 1.25rem; align-items: baseline; flex-wrap: wrap; }
 header.site a { color: var(--muted); text-decoration: none; font-size: .875rem; }
 header.site a:hover { color: var(--fg); }
-header.site a.brand { color: var(--fg); font-weight: 600; font-size: 1rem; letter-spacing: -.01em; }
+header.site a.brand { color: var(--fg); font-weight: 700; font-size: 1rem; letter-spacing: .02em;
+  font-family: Archivo, "IBM Plex Sans", sans-serif; display: inline-flex; align-items: center; gap: .55rem; }
+header.site a.brand img { width: 22px; height: 23px; }
+h1, h2, h3 { font-family: Archivo, "IBM Plex Sans", system-ui, sans-serif; }
 h1 { font-size: 2rem; line-height: 1.2; letter-spacing: -.02em; margin: 0 0 .5rem; }
 h2 { font-size: 1.3rem; margin: 2.75rem 0 .75rem; letter-spacing: -.01em; }
 h3 { font-size: 1.05rem; margin: 2rem 0 .5rem; }
 .lede { font-size: 1.15rem; color: var(--muted); margin: 0 0 2rem; }
 a { color: var(--accent); }
-code, pre, .mono { font-family: ui-monospace, SFMono-Regular, "SF Mono", Menlo, Consolas, monospace; }
+code, pre, .mono { font-family: "IBM Plex Mono", ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }
 code { background: var(--code-bg); padding: .1em .35em; border-radius: 3px; font-size: .875em; }
 pre { background: var(--code-bg); padding: 1rem; border-radius: 6px; overflow-x: auto;
   font-size: .8125rem; line-height: 1.55; }

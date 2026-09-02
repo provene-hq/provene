@@ -50,7 +50,7 @@ test("every provene.dev URL the repository publishes has a page behind it", () =
   // A predicate type that 404s is a bad look for a trust product, and the
   // failure mode is silent: nothing in the toolchain fetches these, only people.
   const pages = [
-    "docs/index.html",
+    "docs/index.html",          // built from site/ by vite
     "docs/writing/index.html",
     "docs/writing/three-agents-one-hooks-system/index.html",
     "docs/attestation/code-change/v0.1/index.html",

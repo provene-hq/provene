@@ -141,3 +141,29 @@ test("a symlinked path and its target are the same repository", () => {
     assert.equal(isWithin(join(dir, "elsewhere", "a.ts"), target, false), false);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
+
+/**
+ * Resolving an ancestor must never ADD segments.
+ *
+ * The walk-up in realPath resolves the deepest ancestor that exists and
+ * re-attaches the rest. On Windows the deepest candidate it reaches for a
+ * rooted path is the bare drive (`E:`), and `E:` means "the working directory
+ * on drive E", not "the root of drive E". Resolving it splices the current
+ * directory into the middle of someone else's path, so a file in a sibling
+ * checkout answers `withinRepo` with true.
+ *
+ * Counting segments catches that anywhere: a resolution may change how a path
+ * is SPELLED, never how deep it is, unless the path really is a symlink into
+ * a deeper place -- which none of these are, because none of them exist.
+ */
+test("resolving a path that is not on disk never grows it", () => {
+  const depth = (p: string): number => p.replace(/^[A-Za-z]:\//, "").split("/").filter((s) => s !== "").length;
+  for (const p of [
+    "e:/provene-not-a-real-directory/a.ts",
+    "z:/nope/deeper/still/a.ts",
+    "/provene-not-a-real-directory/a.ts",
+  ]) {
+    assert.equal(depth(realPath(p)), depth(p),
+      `${p} resolved to ${realPath(p)}, which is a different depth -- an ancestor resolution added segments`);
+  }
+});

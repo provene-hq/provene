@@ -54,3 +54,9 @@ m
 /delete-me.js
 /rename-me.js
 /renamed.js
+
+# The site's dependencies. The BUILD OUTPUT is deliberately committed -- see
+# docs/ -- so that what Cloudflare serves is reviewable in the repository and
+# the deploy needs no build step it could silently skip.
+site/node_modules/
+site/.vite/
