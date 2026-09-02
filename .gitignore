@@ -35,6 +35,15 @@ m
 .env.*
 !.env.example
 
+# Wrangler's local dev vars. Ignored for the same reason as .env -- and note
+# that an EMPTY .dev.vars is load-bearing here: defining it is what stops
+# wrangler reading .env. See the note in wrangler.jsonc.
+.dev.vars
+.dev.vars.*
+
+# Wrangler's local state directory, created by `wrangler dev`.
+.wrangler/
+
 # Scratch scripts an agent left in the repository root while probing another
 # agent. Committed once by a `git add -A` that assumed the working tree was
 # mine. Ignored so the same accident cannot repeat.

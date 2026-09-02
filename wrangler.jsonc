@@ -8,6 +8,13 @@
   // /attestation/code-change/v0.1 serves that directory's index.html. That
   // path is the predicateType of every receipt this project emits, so it is
   // the one URL here that must not 404.
+  //
+  // No vars, and none wanted. Wrangler reads local dev vars from `.dev.vars`
+  // or `.env`, not both, so an empty (gitignored) `.dev.vars` beside this file
+  // is what keeps `.env` -- which holds an unrelated API key -- out of a Worker
+  // that has no code to use it. Local only: `wrangler deploy` does not upload
+  // either file. Verify with `npx wrangler dev`; the bindings table must be
+  // empty.
   "name": "provene",
   "compatibility_date": "2026-09-01",
   "assets": {
